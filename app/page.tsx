@@ -1,69 +1,225 @@
-import Image from "next/image";
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type {
+  AnalyzeResult,
+  JournalEntry,
+  Palate,
+  RefineContext,
+  Wine,
+} from "@/lib/types";
+import { learningSignal, starterPalate } from "@/lib/palates";
+import { CameraView } from "@/components/CameraView";
+import { Analyzing } from "@/components/Analyzing";
+import { Results } from "@/components/Results";
+import { RefineSheet } from "@/components/RefineSheet";
+import { PalatesScreen } from "@/components/PalatesScreen";
+import { Journal } from "@/components/Journal";
+
+const LS = { palates: "sommai.v2.palates", journal: "sommai.v2.journal" };
+const EMPTY_CONTEXT: RefineContext = { occasion: null, dishes: "", intent: null };
+
+type View = "camera" | "analyzing" | "result";
+
+function splitDataUrl(dataUrl: string): { base64: string; mediaType: string } {
+  const match = /^data:(.*?);base64,(.*)$/.exec(dataUrl);
+  if (!match) return { base64: dataUrl, mediaType: "image/jpeg" };
+  return { mediaType: match[1] || "image/jpeg", base64: match[2] };
+}
 
 export default function Home() {
+  const [view, setView] = useState<View>("camera");
+  const [palates, setPalates] = useState<Palate[]>([starterPalate()]);
+  const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const [captured, setCaptured] = useState<string>("");
+  const [result, setResult] = useState<AnalyzeResult | null>(null);
+  const [tableNote, setTableNote] = useState("");
+  const [refineCtx, setRefineCtx] = useState<RefineContext>(EMPTY_CONTEXT);
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [refineBusy, setRefineBusy] = useState(false);
+  const [palatesOpen, setPalatesOpen] = useState(false);
+  const [journalOpen, setJournalOpen] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
+  // hydrate from localStorage
+  useEffect(() => {
+    try {
+      const p = localStorage.getItem(LS.palates);
+      if (p) {
+        const parsed: Palate[] = JSON.parse(p);
+        if (parsed.length) setPalates(parsed);
+      }
+      const j = localStorage.getItem(LS.journal);
+      if (j) setJournal(JSON.parse(j));
+    } catch {
+      /* ignore */
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (hydrated) localStorage.setItem(LS.palates, JSON.stringify(palates));
+  }, [palates, hydrated]);
+  useEffect(() => {
+    if (hydrated) localStorage.setItem(LS.journal, JSON.stringify(journal));
+  }, [journal, hydrated]);
+
+  const activePalates = useMemo(() => {
+    const act = palates.filter((p) => p.active);
+    return act.length ? act : palates.slice(0, 1);
+  }, [palates]);
+
+  const verdicts = useMemo(() => {
+    const map: Record<string, "loved" | "disliked"> = {};
+    for (const e of journal) map[e.wine.id] = e.verdict;
+    return map;
+  }, [journal]);
+
+  const analyze = useCallback(
+    async (dataUrl: string) => {
+      const { base64, mediaType } = splitDataUrl(dataUrl);
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image: base64,
+            mediaType,
+            palates: activePalates,
+            signal: learningSignal(journal),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setResult({ sourceType: "unknown", note: data.error || "Analysis failed.", wines: [], topPick: "" });
+        } else {
+          setResult(data as AnalyzeResult);
+        }
+      } catch {
+        setResult({
+          sourceType: "unknown",
+          note: "Couldn't reach SommAI. Check your connection and try again.",
+          wines: [],
+          topPick: "",
+        });
+      }
+      setView("result");
+    },
+    [activePalates, journal],
+  );
+
+  const onCapture = useCallback(
+    (dataUrl: string) => {
+      setCaptured(dataUrl);
+      setResult(null);
+      setTableNote("");
+      setRefineCtx(EMPTY_CONTEXT);
+      setView("analyzing");
+      analyze(dataUrl);
+    },
+    [analyze],
+  );
+
+  // Principle #2 — re-rank in place with table context, no re-scan.
+  const applyRefine = useCallback(
+    async (ctx: RefineContext) => {
+      if (!result?.wines.length) return;
+      setRefineBusy(true);
+      setRefineCtx(ctx);
+      try {
+        const res = await fetch("/api/refine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wines: result.wines, palates: activePalates, context: ctx }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          const byId = new Map<string, Wine["fits"]>(
+            (data.rescored ?? []).map((r: { wineId: string; fits: Wine["fits"] }) => [r.wineId, r.fits]),
+          );
+          setResult({
+            ...result,
+            topPick: data.topPick || result.topPick,
+            wines: result.wines.map((w) => ({ ...w, fits: byId.get(w.id) ?? w.fits })),
+          });
+          setTableNote(data.tableNote ?? "");
+          setRefineOpen(false);
+        }
+      } catch {
+        /* keep sheet open so they can retry */
+      }
+      setRefineBusy(false);
+    },
+    [result, activePalates],
+  );
+
+  const onSave = useCallback((wine: Wine, verdict: "loved" | "disliked") => {
+    setJournal((j) => {
+      const existing = j.find((e) => e.wine.id === wine.id);
+      if (existing && existing.verdict === verdict) {
+        return j.filter((e) => e.wine.id !== wine.id);
+      }
+      return [{ wine, verdict, savedAt: Date.now() }, ...j.filter((e) => e.wine.id !== wine.id)];
+    });
+  }, []);
+
+  const scanAgain = useCallback(() => {
+    setView("camera");
+    setResult(null);
+    setTableNote("");
+  }, []);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <>
+      {view === "camera" && (
+        <CameraView
+          palateNames={activePalates.map((p) => p.name)}
+          journalCount={journal.length}
+          onCapture={onCapture}
+          onOpenPalates={() => setPalatesOpen(true)}
+          onOpenJournal={() => setJournalOpen(true)}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      )}
+
+      {view === "analyzing" && <Analyzing image={captured} />}
+
+      {view === "result" && result && (
+        <Results
+          result={result}
+          tableNote={tableNote}
+          verdicts={verdicts}
+          onSave={onSave}
+          onScanAgain={scanAgain}
+          onOpenRefine={() => setRefineOpen(true)}
+        />
+      )}
+
+      {refineOpen && (
+        <RefineSheet
+          open={refineOpen}
+          busy={refineBusy}
+          initial={refineCtx}
+          onApply={applyRefine}
+          onClose={() => setRefineOpen(false)}
+        />
+      )}
+
+      {palatesOpen && (
+        <PalatesScreen
+          palates={palates}
+          journal={journal}
+          onChange={setPalates}
+          onClose={() => setPalatesOpen(false)}
+        />
+      )}
+
+      {journalOpen && (
+        <Journal
+          entries={journal}
+          onClose={() => setJournalOpen(false)}
+          onRemove={(id) => setJournal((j) => j.filter((e) => e.wine.id !== id))}
+        />
+      )}
+    </>
   );
 }
