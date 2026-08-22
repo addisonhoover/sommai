@@ -16,7 +16,11 @@ import { RefineSheet } from "@/components/RefineSheet";
 import { PalatesScreen } from "@/components/PalatesScreen";
 import { Journal } from "@/components/Journal";
 
-const LS = { palates: "sommai.v2.palates", journal: "sommai.v2.journal" };
+const LS = {
+  palates: "sommai.v2.palates",
+  journal: "sommai.v2.journal",
+  defaultTable: "sommai.v2.defaultTable",
+};
 const EMPTY_CONTEXT: RefineContext = { occasion: null, dishes: "", intent: null };
 
 type View = "camera" | "analyzing" | "result";
@@ -30,10 +34,12 @@ function splitDataUrl(dataUrl: string): { base64: string; mediaType: string } {
 export default function Home() {
   const [view, setView] = useState<View>("camera");
   const [palates, setPalates] = useState<Palate[]>([starterPalate()]);
+  const [defaultTable, setDefaultTable] = useState<string[]>([]);
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [captured, setCaptured] = useState<string>("");
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [tableNote, setTableNote] = useState("");
+  const [refined, setRefined] = useState(false);
   const [refineCtx, setRefineCtx] = useState<RefineContext>(EMPTY_CONTEXT);
   const [refineOpen, setRefineOpen] = useState(false);
   const [refineBusy, setRefineBusy] = useState(false);
@@ -41,13 +47,23 @@ export default function Home() {
   const [journalOpen, setJournalOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
-  // hydrate from localStorage
+  // Hydrate from localStorage. The default table decides who is
+  // "at the table" every time the app opens — no per-night fiddling.
   useEffect(() => {
     try {
-      const p = localStorage.getItem(LS.palates);
-      if (p) {
-        const parsed: Palate[] = JSON.parse(p);
-        if (parsed.length) setPalates(parsed);
+      const rawPalates = localStorage.getItem(LS.palates);
+      const rawDefault = localStorage.getItem(LS.defaultTable);
+      const defaults: string[] = rawDefault ? JSON.parse(rawDefault) : [];
+      setDefaultTable(defaults);
+      if (rawPalates) {
+        let parsed: Palate[] = JSON.parse(rawPalates);
+        if (parsed.length) {
+          if (defaults.length) {
+            parsed = parsed.map((p) => ({ ...p, active: defaults.includes(p.id) }));
+            if (!parsed.some((p) => p.active)) parsed[0] = { ...parsed[0], active: true };
+          }
+          setPalates(parsed);
+        }
       }
       const j = localStorage.getItem(LS.journal);
       if (j) setJournal(JSON.parse(j));
@@ -63,6 +79,9 @@ export default function Home() {
   useEffect(() => {
     if (hydrated) localStorage.setItem(LS.journal, JSON.stringify(journal));
   }, [journal, hydrated]);
+  useEffect(() => {
+    if (hydrated) localStorage.setItem(LS.defaultTable, JSON.stringify(defaultTable));
+  }, [defaultTable, hydrated]);
 
   const activePalates = useMemo(() => {
     const act = palates.filter((p) => p.active);
@@ -113,6 +132,7 @@ export default function Home() {
       setCaptured(dataUrl);
       setResult(null);
       setTableNote("");
+      setRefined(false);
       setRefineCtx(EMPTY_CONTEXT);
       setView("analyzing");
       analyze(dataUrl);
@@ -143,6 +163,7 @@ export default function Home() {
             wines: result.wines.map((w) => ({ ...w, fits: byId.get(w.id) ?? w.fits })),
           });
           setTableNote(data.tableNote ?? "");
+          setRefined(true);
           setRefineOpen(false);
         }
       } catch {
@@ -167,6 +188,7 @@ export default function Home() {
     setView("camera");
     setResult(null);
     setTableNote("");
+    setRefined(false);
   }, []);
 
   return (
@@ -187,6 +209,7 @@ export default function Home() {
         <Results
           result={result}
           tableNote={tableNote}
+          refined={refined}
           verdicts={verdicts}
           onSave={onSave}
           onScanAgain={scanAgain}
@@ -208,7 +231,14 @@ export default function Home() {
         <PalatesScreen
           palates={palates}
           journal={journal}
+          defaultTable={defaultTable}
           onChange={setPalates}
+          onSaveDefault={(ids) => setDefaultTable(ids)}
+          onPulled={(s) => {
+            if (s.palates.length) setPalates(s.palates);
+            setJournal(s.journal);
+            setDefaultTable(s.defaultTable);
+          }}
           onClose={() => setPalatesOpen(false)}
         />
       )}

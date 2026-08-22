@@ -1,21 +1,34 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JournalEntry, Palate } from "@/lib/types";
 import { palateToMarkdown } from "@/lib/palates";
-import { ChevronLeft, CloseIcon, DownloadIcon, PlusIcon } from "./icons";
+import { syncConfigured } from "@/lib/supabase";
+import {
+  currentUserEmail,
+  pullState,
+  pushState,
+  signIn,
+  signOut,
+  type CloudState,
+} from "@/lib/sync";
+import { ChevronLeft, CloseIcon, DownloadIcon, PlusIcon, UploadIcon } from "./icons";
 
-// Principle #3: the palate is living and portable.
-// Import a pile of notes to bootstrap it; export it anywhere, anytime.
 export function PalatesScreen({
   palates,
   journal,
+  defaultTable,
   onChange,
+  onSaveDefault,
+  onPulled,
   onClose,
 }: {
   palates: Palate[];
   journal: JournalEntry[];
+  defaultTable: string[];
   onChange: (next: Palate[]) => void;
+  onSaveDefault: (ids: string[]) => void;
+  onPulled: (state: CloudState) => void;
   onClose: () => void;
 }) {
   const [importing, setImporting] = useState(false);
@@ -25,16 +38,24 @@ export function PalatesScreen({
   const [notes, setNotes] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const activeIds = palates.filter((p) => p.active).map((p) => p.id);
+  const defaultMatchesActive =
+    defaultTable.length === activeIds.length && activeIds.every((id) => defaultTable.includes(id));
+  const defaultNames = palates
+    .filter((p) => defaultTable.includes(p.id))
+    .map((p) => p.name)
+    .join(" · ");
+
   const toggleActive = (id: string) => {
     onChange(palates.map((p) => (p.id === id ? { ...p, active: !p.active } : p)));
   };
 
   const remove = (id: string) => {
     const next = palates.filter((p) => p.id !== id);
-    // never allow zero palates — the instant scan must always work
-    if (next.length === 0) return;
+    if (next.length === 0) return; // the instant scan must always work
     if (!next.some((p) => p.active)) next[0] = { ...next[0], active: true };
     onChange(next);
+    if (defaultTable.includes(id)) onSaveDefault(defaultTable.filter((x) => x !== id));
   };
 
   const exportPalate = (p: Palate) => {
@@ -53,7 +74,10 @@ export function PalatesScreen({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === "string") setNotes(reader.result);
+      if (typeof reader.result === "string") {
+        setNotes(reader.result);
+        setImporting(true);
+      }
     };
     reader.readAsText(file);
     e.target.value = "";
@@ -85,7 +109,6 @@ export function PalatesScreen({
           source: "imported",
           updatedAt: Date.now(),
         };
-        // Replace the starter if it's still untouched; otherwise append.
         const rest = palates.filter((p) => p.source !== "starter");
         onChange([...rest, palate]);
         setImporting(false);
@@ -105,22 +128,105 @@ export function PalatesScreen({
           <ChevronLeft className="h-5 w-5" />
           <span className="text-[14px]">Back</span>
         </button>
-        <p className="text-[15px] font-semibold text-cream">Palates</p>
+        <p className="text-[15px] font-semibold text-cream">The Table</p>
         <div className="w-14" aria-hidden />
       </header>
 
       <div className="mx-auto w-full max-w-md px-4 pb-16 pt-6">
-        <p className="text-[13px] leading-relaxed text-muted">
-          Active palates get their own fit score on every scan. Import tasting notes to bootstrap a
-          profile; it keeps learning from every wine you save.
-        </p>
+        {/* ---- import: front and center ---- */}
+        {!importing ? (
+          <div className="flex gap-3">
+            <button
+              onClick={() => setImporting(true)}
+              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-burgundy py-4 text-[14px] font-medium text-cream"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Import a palate
+            </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="flex items-center justify-center gap-2 rounded-2xl border border-hairline px-5 text-[14px] text-cream"
+            >
+              <UploadIcon className="h-4 w-4" />
+              File
+            </button>
+          </div>
+        ) : (
+          <div className="rounded-3xl border border-burgundy-light/40 bg-surface p-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[15px] font-semibold text-cream">Import a palate</h3>
+              <button
+                onClick={() => setImporting(false)}
+                className="grid h-8 w-8 place-items-center rounded-full border border-hairline"
+              >
+                <CloseIcon className="h-3.5 w-3.5 text-cream" />
+              </button>
+            </div>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+              Paste anything — tasting notes, wine lists, a doc you and Erin have been keeping. Or
+              upload the file itself. SommAI distills it into a profile.
+            </p>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Whose palate? (e.g. Erin)"
+              className="mt-4 w-full rounded-2xl border border-hairline bg-ink/50 px-4 py-3 text-[14px] text-cream placeholder:text-faint focus:border-burgundy-light/60 focus:outline-none"
+            />
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Paste the notes here…"
+              rows={6}
+              className="mt-3 w-full resize-none rounded-2xl border border-hairline bg-ink/50 px-4 py-3 text-[13px] leading-relaxed text-cream placeholder:text-faint focus:border-burgundy-light/60 focus:outline-none"
+            />
+            <div className="mt-3 flex items-center justify-between">
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="flex items-center gap-2 text-[13px] text-muted underline underline-offset-4 hover:text-cream"
+              >
+                <UploadIcon className="h-3.5 w-3.5" />
+                Upload .md / .txt instead
+              </button>
+              <span className="text-[11px] text-faint">{notes.length.toLocaleString()} chars</span>
+            </div>
+            {error && <p className="mt-3 text-[13px] text-burgundy-light">{error}</p>}
+            <button
+              disabled={busy || !notes.trim()}
+              onClick={runImport}
+              className="mt-4 w-full rounded-full bg-cream py-3 text-[14px] font-medium text-ink disabled:opacity-50"
+            >
+              {busy ? "Distilling the palate…" : "Create palate"}
+            </button>
+          </div>
+        )}
+        <input ref={fileRef} type="file" accept=".md,.txt,text/markdown,text/plain" hidden onChange={onFile} />
 
-        <div className="mt-6 space-y-4">
+        {/* ---- tonight's table ---- */}
+        <div className="mt-8 flex items-end justify-between">
+          <div>
+            <p className="eyebrow">Tonight&apos;s table</p>
+            <p className="mt-1 text-[12.5px] text-muted">Who&apos;s drinking? Each gets a fit score.</p>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-4">
           {palates.map((p) => (
-            <div key={p.id} className="rounded-3xl border border-hairline bg-surface p-5">
+            <div
+              key={p.id}
+              className={`rounded-3xl border bg-surface p-5 transition ${
+                p.active ? "border-burgundy-light/40" : "border-hairline opacity-80"
+              }`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="text-[16px] font-semibold text-cream">{p.name}</h3>
+                  <h3 className="text-[16px] font-semibold text-cream">
+                    {p.name}
+                    {defaultTable.includes(p.id) && (
+                      <span className="ml-2 align-middle text-[10px] uppercase tracking-wider text-burgundy-light">
+                        default
+                      </span>
+                    )}
+                  </h3>
                   <p className="mt-0.5 text-[11px] uppercase tracking-wider text-faint">
                     {p.source === "starter" ? "Starter" : p.source === "imported" ? "Imported" : "Learning"}
                     {" · "}updated {new Date(p.updatedAt).toLocaleDateString()}
@@ -132,7 +238,7 @@ export function PalatesScreen({
                   className={`relative h-7 w-12 shrink-0 rounded-full transition ${
                     p.active ? "bg-burgundy" : "bg-surface-2"
                   }`}
-                  aria-label={`${p.active ? "Deactivate" : "Activate"} ${p.name}`}
+                  aria-label={`${p.active ? "Remove" : "Seat"} ${p.name} at the table`}
                 >
                   <span
                     className={`absolute top-1 h-5 w-5 rounded-full bg-cream transition-all ${
@@ -178,59 +284,150 @@ export function PalatesScreen({
           ))}
         </div>
 
-        {!importing ? (
-          <button
-            onClick={() => setImporting(true)}
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-3xl border border-dashed border-hairline py-5 text-[14px] text-muted hover:text-cream"
-          >
-            <PlusIcon className="h-4 w-4" />
-            Add a palate from tasting notes
-          </button>
-        ) : (
-          <div className="mt-6 rounded-3xl border border-burgundy-light/40 bg-surface p-5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[15px] font-semibold text-cream">Import a palate</h3>
-              <button
-                onClick={() => setImporting(false)}
-                className="grid h-8 w-8 place-items-center rounded-full border border-hairline"
-              >
-                <CloseIcon className="h-3.5 w-3.5 text-cream" />
-              </button>
-            </div>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Whose palate? (e.g. Erin)"
-              className="mt-4 w-full rounded-2xl border border-hairline bg-ink/50 px-4 py-3 text-[14px] text-cream placeholder:text-faint focus:border-burgundy-light/60 focus:outline-none"
-            />
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Paste tasting notes, wine lists, anything — or upload a .md file below. SommAI will distill it into a profile."
-              rows={6}
-              className="mt-3 w-full resize-none rounded-2xl border border-hairline bg-ink/50 px-4 py-3 text-[13px] leading-relaxed text-cream placeholder:text-faint focus:border-burgundy-light/60 focus:outline-none"
-            />
-            <div className="mt-3 flex items-center justify-between">
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="text-[13px] text-muted underline underline-offset-4 hover:text-cream"
-              >
-                Upload .md / .txt
-              </button>
-              <span className="text-[11px] text-faint">{notes.length.toLocaleString()} chars</span>
-            </div>
-            {error && <p className="mt-3 text-[13px] text-burgundy-light">{error}</p>}
+        {/* default table setting */}
+        <div className="mt-5 rounded-2xl border border-hairline bg-surface p-4">
+          <p className="text-[13px] text-cream/90">
+            {defaultTable.length
+              ? `Every scan starts as: ${defaultNames}`
+              : "No default table set — the app starts with whoever was last active."}
+          </p>
+          {!defaultMatchesActive && (
             <button
-              disabled={busy || !notes.trim()}
-              onClick={runImport}
-              className="mt-4 w-full rounded-full bg-cream py-3 text-[14px] font-medium text-ink disabled:opacity-50"
+              onClick={() => onSaveDefault(activeIds)}
+              className="mt-3 rounded-full border border-burgundy-light/50 px-4 py-2 text-[13px] text-burgundy-light"
             >
-              {busy ? "Distilling the palate…" : "Create palate"}
+              Make tonight&apos;s table the default
             </button>
-            <input ref={fileRef} type="file" accept=".md,.txt,text/markdown,text/plain" hidden onChange={onFile} />
-          </div>
-        )}
+          )}
+        </div>
+
+        {/* ---- cloud sync ---- */}
+        <CloudSyncCard
+          getState={() => ({ palates, journal, defaultTable })}
+          onPulled={onPulled}
+        />
       </div>
+    </div>
+  );
+}
+
+function CloudSyncCard({
+  getState,
+  onPulled,
+}: {
+  getState: () => CloudState;
+  onPulled: (s: CloudState) => void;
+}) {
+  const configured = syncConfigured();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [user, setUser] = useState<string | null>(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (configured) currentUserEmail().then(setUser);
+  }, [configured]);
+
+  if (!configured) {
+    return (
+      <div className="mt-8 rounded-2xl border border-hairline p-4">
+        <p className="eyebrow">Cloud sync</p>
+        <p className="mt-2 text-[12.5px] leading-relaxed text-faint">
+          Not connected yet. Once Supabase keys are added, your table syncs across every device.
+        </p>
+      </div>
+    );
+  }
+
+  const run = async (fn: () => Promise<string | null | void>, okMsg: string) => {
+    setBusy(true);
+    setMsg("");
+    const err = await fn();
+    setMsg(err ? String(err) : okMsg);
+    setBusy(false);
+  };
+
+  return (
+    <div className="mt-8 rounded-2xl border border-hairline p-4">
+      <p className="eyebrow">Cloud sync</p>
+      {!user ? (
+        <>
+          <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+            One shared household sign-in — use the same email and password on every phone.
+          </p>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            type="email"
+            autoComplete="email"
+            className="mt-3 w-full rounded-2xl border border-hairline bg-ink/50 px-4 py-3 text-[14px] text-cream placeholder:text-faint focus:border-burgundy-light/60 focus:outline-none"
+          />
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            type="password"
+            autoComplete="current-password"
+            className="mt-2 w-full rounded-2xl border border-hairline bg-ink/50 px-4 py-3 text-[14px] text-cream placeholder:text-faint focus:border-burgundy-light/60 focus:outline-none"
+          />
+          <button
+            disabled={busy || !email || password.length < 6}
+            onClick={() =>
+              run(async () => {
+                const err = await signIn(email, password);
+                if (!err) setUser(await currentUserEmail());
+                return err;
+              }, "Signed in.")
+            }
+            className="mt-3 w-full rounded-full bg-cream py-3 text-[14px] font-medium text-ink disabled:opacity-50"
+          >
+            {busy ? "Working…" : "Sign in / create account"}
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="mt-2 text-[13px] text-cream/90">{user}</p>
+          <div className="mt-3 flex gap-2">
+            <button
+              disabled={busy}
+              onClick={() => run(() => pushState(getState()), "Pushed to the cloud.")}
+              className="flex-1 rounded-full border border-hairline py-2.5 text-[13px] text-cream disabled:opacity-50"
+            >
+              Push
+            </button>
+            <button
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  const { state, error } = await pullState();
+                  if (error) return error;
+                  if (!state) return "Nothing in the cloud yet — push first.";
+                  onPulled(state);
+                  return null;
+                }, "Pulled from the cloud.")
+              }
+              className="flex-1 rounded-full border border-hairline py-2.5 text-[13px] text-cream disabled:opacity-50"
+            >
+              Pull
+            </button>
+            <button
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  await signOut();
+                  setUser(null);
+                }, "Signed out.")
+              }
+              className="rounded-full px-4 py-2.5 text-[13px] text-faint"
+            >
+              Sign out
+            </button>
+          </div>
+        </>
+      )}
+      {msg && <p className="mt-3 text-[12.5px] text-muted">{msg}</p>}
     </div>
   );
 }
