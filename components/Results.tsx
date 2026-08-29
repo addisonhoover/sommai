@@ -1,14 +1,73 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { AnalyzeResult, ServeStyle, Wine } from "@/lib/types";
+import type { AnalyzeResult, PriceBand, ServeStyle, Wine } from "@/lib/types";
 import { WineCard } from "./WineCard";
 import { CameraIcon, ChevronLeft, TuneIcon } from "./icons";
+import { PriceBandControl } from "./PriceBandControl";
 
 const INITIAL_COUNT = 3;
 
 function folio(n: number): string {
   return String(n).padStart(2, "0");
+}
+
+function MenuNightControls({
+  serve,
+  onServe,
+  band,
+  bandTouched,
+  onBandChange,
+}: {
+  serve: ServeStyle;
+  onServe?: (next: ServeStyle) => void;
+  band?: PriceBand;
+  bandTouched?: boolean;
+  onBandChange?: (next: PriceBand) => void;
+}) {
+  if (!onServe && !onBandChange) return null;
+  return (
+    <div className="w-full">
+      {onServe && (
+        <div className="flex rounded-full border border-hairline p-1">
+          <button
+            type="button"
+            onClick={() => onServe("bottle")}
+            className={`flex-1 rounded-full py-2 text-[13px] transition ${
+              serve === "bottle" ? "bg-burgundy text-cream" : "text-muted"
+            }`}
+          >
+            By the bottle
+          </button>
+          <button
+            type="button"
+            onClick={() => onServe("glass")}
+            className={`flex-1 rounded-full py-2 text-[13px] transition ${
+              serve === "glass" ? "bg-burgundy text-cream" : "text-muted"
+            }`}
+          >
+            By the glass
+          </button>
+        </div>
+      )}
+      {onBandChange && band && (
+        <div className={onServe ? "mt-4" : ""}>
+          <p className="eyebrow">Tonight&apos;s band</p>
+          <p className="mt-1 text-left text-[12px] leading-relaxed text-faint">
+            A guide, not a wall. Great fits a little outside can still make the three.
+          </p>
+          <div className="mt-3">
+            <PriceBandControl
+              band={band}
+              touched={bandTouched ?? false}
+              serve={serve}
+              onChange={onBandChange}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Results read like a wine list — pages that turn, not a scroll.
@@ -24,6 +83,9 @@ export function Results({
   onOpenRefine,
   serve = "bottle",
   onServe,
+  band,
+  bandTouched = false,
+  onBandChange,
 }: {
   result: AnalyzeResult;
   tableNote: string;
@@ -35,10 +97,23 @@ export function Results({
   onOpenRefine: () => void;
   serve?: ServeStyle;
   onServe?: (next: ServeStyle) => void;
+  band?: PriceBand;
+  bandTouched?: boolean;
+  onBandChange?: (next: PriceBand) => void;
 }) {
   const [expandedByUser, setExpandedByUser] = useState(false);
   const [page, setPage] = useState(0);
   const railRef = useRef<HTMLDivElement>(null);
+  const isMenu = result.sourceType === "menu";
+  const menuGuides = isMenu ? (
+    <MenuNightControls
+      serve={serve}
+      onServe={onServe}
+      band={band}
+      bandTouched={bandTouched}
+      onBandChange={onBandChange}
+    />
+  ) : null;
 
   const expanded = refined || expandedByUser;
 
@@ -85,28 +160,7 @@ export function Results({
 
       {shown.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center px-10 text-center">
-          {result.sourceType === "menu" && onServe && (
-            <div className="mb-8 flex w-full max-w-sm rounded-full border border-hairline p-1">
-              <button
-                type="button"
-                onClick={() => onServe("bottle")}
-                className={`flex-1 rounded-full py-2 text-[13px] transition ${
-                  serve === "bottle" ? "bg-burgundy text-cream" : "text-muted"
-                }`}
-              >
-                By the bottle
-              </button>
-              <button
-                type="button"
-                onClick={() => onServe("glass")}
-                className={`flex-1 rounded-full py-2 text-[13px] transition ${
-                  serve === "glass" ? "bg-burgundy text-cream" : "text-muted"
-                }`}
-              >
-                By the glass
-              </button>
-            </div>
-          )}
+          {menuGuides && <div className="mb-8 w-full max-w-sm">{menuGuides}</div>}
           <p className="text-[15px] leading-relaxed text-muted">
             {result.note ||
               (serve === "glass"
@@ -124,28 +178,7 @@ export function Results({
       ) : (
         <>
           <div className="px-5 pt-4">
-            {result.sourceType === "menu" && onServe && (
-              <div className="mb-4 flex rounded-full border border-hairline p-1">
-                <button
-                  type="button"
-                  onClick={() => onServe("bottle")}
-                  className={`flex-1 rounded-full py-2 text-[13px] transition ${
-                    serve === "bottle" ? "bg-burgundy text-cream" : "text-muted"
-                  }`}
-                >
-                  By the bottle
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onServe("glass")}
-                  className={`flex-1 rounded-full py-2 text-[13px] transition ${
-                    serve === "glass" ? "bg-burgundy text-cream" : "text-muted"
-                  }`}
-                >
-                  By the glass
-                </button>
-              </div>
-            )}
+            {menuGuides && <div className="mb-4">{menuGuides}</div>}
             <p className="eyebrow">
               {expanded
                 ? `All ${sorted.length} wines · best fit first`

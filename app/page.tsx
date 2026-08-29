@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AnalyzeResult, Palate, PriceBand, RefineContext, ServeStyle, Wine, WineLogEntry } from "@/lib/types";
 import { ensureHousehold, householdPalates, learningSignal, seatDefaultPool } from "@/lib/palates";
 import { prepareScanImage } from "@/lib/image";
-import { OPEN_BAND, rankPicks } from "@/lib/price";
+import { DEFAULT_BAND, rankPicks } from "@/lib/price";
 import {
   compactKnown,
   flagsFor,
@@ -56,7 +56,7 @@ export default function Home() {
   const [logOpen, setLogOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [serve, setServe] = useState<ServeStyle>("bottle");
-  const [priceBand, setPriceBand] = useState<PriceBand>(OPEN_BAND);
+  const [priceBand, setPriceBand] = useState<PriceBand>(DEFAULT_BAND);
   const [bandTouched, setBandTouched] = useState(false);
 
   const viewRef = useRef(view);
@@ -193,7 +193,7 @@ export default function Home() {
       setTableNote("");
       setRefined(false);
       setServe("bottle");
-      setPriceBand(OPEN_BAND);
+      setPriceBand(DEFAULT_BAND);
       setBandTouched(false);
       setRefineCtx(EMPTY_CONTEXT);
       setThinkPhase("analyze");
@@ -208,12 +208,18 @@ export default function Home() {
       setPriceBand(next);
       setBandTouched(true);
       setRefineCtx((ctx) => ({ ...ctx, priceBand: next }));
-      if (viewRef.current !== "analyzing") return;
+      const here = viewRef.current;
+      if (here !== "analyzing" && here !== "result") return;
       if (bandTimerRef.current) clearTimeout(bandTimerRef.current);
       bandTimerRef.current = setTimeout(() => {
-        if (viewRef.current !== "analyzing") return;
+        const now = viewRef.current;
+        if (now !== "analyzing" && now !== "result") return;
         const photo = capturedRef.current;
         if (!photo) return;
+        if (now === "result") {
+          setThinkPhase("analyze");
+          setView("analyzing");
+        }
         analyze(photo, { priceBand: next, serve: serveRef.current });
       }, 480);
     },
@@ -339,7 +345,12 @@ export default function Home() {
             serve={serve}
             band={priceBand}
             bandTouched={bandTouched}
-            showBand={thinkPhase !== "refine"}
+            showBand={
+              thinkPhase !== "refine" &&
+              (result?.sourceType === "menu" ||
+                bottleResult?.sourceType === "menu" ||
+                glassResult?.sourceType === "menu")
+            }
             onBandChange={onBandChange}
           />
         </div>
@@ -360,6 +371,9 @@ export default function Home() {
             onOpenRefine={() => setRefineOpen(true)}
             serve={serve}
             onServe={onServe}
+            band={priceBand}
+            bandTouched={bandTouched}
+            onBandChange={onBandChange}
           />
         </div>
       )}
@@ -370,6 +384,7 @@ export default function Home() {
           busy={refineBusy}
           initial={refineCtx}
           serve={serve}
+          showBand={result?.sourceType === "menu"}
           onApply={applyRefine}
           onClose={() => setRefineOpen(false)}
         />

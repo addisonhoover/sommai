@@ -1,13 +1,15 @@
 "use client";
 
+import { useRef } from "react";
 import type { PriceBand, ServeStyle } from "@/lib/types";
 import {
+  BAND_WIDTH,
   PRICE_CEILING,
   PRICE_FLOOR,
   PRICE_STEP,
   bandLabel,
-  clampBand,
   formatDollars,
+  slideWindow,
 } from "@/lib/price";
 
 export function PriceBandControl({
@@ -21,48 +23,89 @@ export function PriceBandControl({
   serve?: ServeStyle;
   onChange: (next: PriceBand) => void;
 }) {
-  const span = PRICE_CEILING - PRICE_FLOOR || 1;
-  const left = ((band.min - PRICE_FLOOR) / span) * 100;
-  const width = ((band.max - band.min) / span) * 100;
-  const active = touched ? band : null;
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ pointerId: number; grab: number } | null>(null);
 
-  const setMin = (raw: number) => {
-    onChange(clampBand(Math.min(raw, band.max - PRICE_STEP), band.max));
+  const shown = slideWindow(band.min);
+  const span = PRICE_CEILING - PRICE_FLOOR || 1;
+  const left = ((shown.min - PRICE_FLOOR) / span) * 100;
+  const width = (BAND_WIDTH / span) * 100;
+  const active = touched ? shown : null;
+
+  const windowAtPointer = (clientX: number, grab: number) => {
+    const track = trackRef.current;
+    if (!track) return shown;
+    const rect = track.getBoundingClientRect();
+    if (rect.width <= 0) return shown;
+    const bandPx = (BAND_WIDTH / span) * rect.width;
+    const origin = clientX - rect.left - grab * bandPx;
+    return slideWindow(PRICE_FLOOR + (origin / rect.width) * span);
   };
-  const setMax = (raw: number) => {
-    onChange(clampBand(band.min, Math.max(raw, band.min + PRICE_STEP)));
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const track = trackRef.current;
+    if (!track) return;
+    const rect = track.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const bandLeft = (left / 100) * rect.width;
+    const bandRight = bandLeft + (width / 100) * rect.width;
+    const onBand = x >= bandLeft && x <= bandRight;
+    const grab = onBand && bandRight > bandLeft ? (x - bandLeft) / (bandRight - bandLeft) : 0.5;
+    dragRef.current = { pointerId: e.pointerId, grab };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    onChange(windowAtPointer(e.clientX, grab));
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    onChange(windowAtPointer(e.clientX, drag.grab));
+  };
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      onChange(slideWindow(shown.min - PRICE_STEP));
+    } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      onChange(slideWindow(shown.min + PRICE_STEP));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      onChange(slideWindow(PRICE_FLOOR));
+    } else if (e.key === "End") {
+      e.preventDefault();
+      onChange(slideWindow(PRICE_CEILING));
+    }
   };
 
   return (
     <div>
       <p className="text-[13px] leading-relaxed text-cream/90">{bandLabel(active, serve)}</p>
-      <div className="relative mt-4 h-8">
-        <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-surface-2" />
+      <div
+        ref={trackRef}
+        role="slider"
+        tabIndex={0}
+        aria-label="Tonight's price band"
+        aria-valuemin={PRICE_FLOOR}
+        aria-valuemax={PRICE_CEILING - BAND_WIDTH}
+        aria-valuenow={shown.min}
+        aria-valuetext={`${formatDollars(shown.min)} to ${formatDollars(shown.max)}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onKeyDown={onKeyDown}
+        className="price-band relative mt-4 h-12 touch-none select-none outline-none"
+      >
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-surface-2" />
         <div
-          className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-burgundy-light"
-          style={{ left: `${left}%`, width: `${Math.max(width, 1)}%` }}
-        />
-        <input
-          type="range"
-          min={PRICE_FLOOR}
-          max={PRICE_CEILING}
-          step={PRICE_STEP}
-          value={band.min}
-          onChange={(e) => setMin(Number(e.target.value))}
-          className="band-range"
-          aria-label="Lowest price tonight"
-          style={{ zIndex: band.min > PRICE_CEILING - 40 ? 5 : 3 }}
-        />
-        <input
-          type="range"
-          min={PRICE_FLOOR}
-          max={PRICE_CEILING}
-          step={PRICE_STEP}
-          value={band.max}
-          onChange={(e) => setMax(Number(e.target.value))}
-          className="band-range"
-          aria-label="Highest price tonight"
-          style={{ zIndex: 4 }}
+          className="price-band-window pointer-events-none absolute top-1/2 h-11 -translate-y-1/2 rounded-full bg-band shadow-[0_0_0_1px_rgba(243,240,234,0.12)]"
+          style={{ left: `${left}%`, width: `${width}%` }}
         />
       </div>
       <div className="mt-1 flex justify-between text-[11px] text-faint">

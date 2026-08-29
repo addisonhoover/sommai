@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { formatBand, parseMenuPrice, preferBand, rankPicks } from "./price";
+import { formatBand, parseMenuPrice, preferBand, rankPicks, slideWindow } from "./price";
 import type { Wine } from "./types";
 
 function wine(partial: Partial<Wine> & Pick<Wine, "name" | "priceText">): Wine {
@@ -26,6 +26,14 @@ assert.equal(parseMenuPrice("BTG 18", "glass"), 18);
 assert.equal(parseMenuPrice("", "bottle"), null);
 
 assert.equal(formatBand({ min: 90, max: 140 }), "$90–$140");
+
+assert.deepEqual(slideWindow(0), { min: 0, max: 50 });
+assert.deepEqual(slideWindow(40), { min: 40, max: 90 });
+assert.deepEqual(slideWindow(90), { min: 90, max: 140 });
+assert.deepEqual(slideWindow(250), { min: 250, max: 300 });
+assert.deepEqual(slideWindow(-20), { min: 0, max: 50 }, "left edge stays $0–$50");
+assert.deepEqual(slideWindow(280), { min: 250, max: 300 }, "right edge stays $250–$300 — no shrink");
+assert.deepEqual(slideWindow(47), { min: 50, max: 100 });
 
 const cheap = wine({ name: "Weeknight", priceText: "$42", fits: [{ palateId: "erin", palateName: "Erin", score: 78, reason: "" }] });
 const splashy = wine({ name: "Celebration", priceText: "$210", fits: [{ palateId: "erin", palateName: "Erin", score: 94, reason: "" }] });
