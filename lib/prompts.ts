@@ -1,5 +1,6 @@
 import type { KnownWine, Palate, RefineContext } from "./types";
 import { HOUSEHOLD_RULES } from "./palates";
+import { formatBand, nightGuidance } from "./price";
 
 // Schema fragment for one wine's per-palate fits.
 const FITS_SCHEMA = {
@@ -45,7 +46,7 @@ export const WINE_SCHEMA = {
           vintage: { type: "string", description: 'Vintage year, "" if unknown or NV' },
           region: { type: "string", description: 'Region / appellation, "" if unknown' },
           varietals: { type: "array", items: { type: "string" } },
-          priceText: { type: "string", description: 'Price exactly as printed, "" if none' },
+          priceText: { type: "string", description: 'Price exactly as printed, "" if none. Never invent a price.' },
           flavorNotes: { type: "array", items: { type: "string" } },
           structure: {
             type: "object",
@@ -62,10 +63,14 @@ export const WINE_SCHEMA = {
           pairings: { type: "array", items: { type: "string" } },
           fits: FITS_SCHEMA,
           summary: { type: "string", description: "1–2 sentence elegant tasting summary" },
+          byTheGlass: {
+            type: "boolean",
+            description: "True when the menu lists this wine as available by the glass",
+          },
         },
         required: [
           "id", "name", "producer", "vintage", "region", "varietals", "priceText",
-          "flavorNotes", "structure", "terroir", "pairings", "fits", "summary",
+          "flavorNotes", "structure", "terroir", "pairings", "fits", "summary", "byTheGlass",
         ],
       },
     },
@@ -125,6 +130,8 @@ Principles:
 - You will be given one or more PALATES (people at the table). For EVERY wine, return one fit entry per palate, using that palate's exact palateId and palateName. Scores are 0–100, calibrated to that person: reward what they love, penalize what they avoid, weigh their known favorites and recent verdicts. Be discriminating — spread scores out; don't give everything 80+.
 - Fit scores must be stable. The same wine + the same palates should receive the same scores and notes. Do not re-roll. If KNOWN WINES are provided and you recognize the same bottle (same producer / name / vintage — slight label wording still counts), copy those fits, summary, and wine id instead of inventing new ones. Only rescore when the seated palates differ from that wine's scoredFor list.
 - Keep prose elegant and concise. No emojis. No hype. Sound like a trusted expert, not a brochure.
+- Prices: copy what is printed. Never invent a price. If a price band is given, treat it as guidance — prefer in-band wines, allow a great fit a little outside when the list is thin, and stay in band when the list is rich.
+- If asked for by-the-glass, only return wines the menu actually lists as pours.
 - If the photo is blurry or not a wine menu/label, set sourceType "unknown", return an empty wines array, and put a brief friendly note.`;
 
 export function palateBlock(
@@ -179,15 +186,12 @@ export function palateBlock(
 }
 
 export function refineBlock(context: RefineContext): string {
-  const spend = context.spend ?? 50;
-  const spendLabel =
-    spend <= 35
-      ? "cheap night — prefer the more modest bottles that still meet the household floor (never cheap-and-bad)"
-      : spend >= 70
-        ? "expensive night — prefer the special, celebratory bottles"
-        : "as listed — no spend tilt";
+  const serve = context.serve ?? "bottle";
   const bits = [
-    `Tonight's spend (0 cheap night ↔ 100 expensive night): ${spend} — ${spendLabel}`,
+    nightGuidance(context.priceBand, serve),
+    context.priceBand
+      ? `Tonight's band: ${formatBand(context.priceBand)} per ${serve} — prefer in band, do not invent prices, do not hide a great fit that is a little outside unless the list is rich enough.`
+      : "Tonight's band: none set — do not tilt on price.",
     context.occasion ? `Occasion: ${context.occasion}` : null,
     context.dishes.trim() ? `What the table is eating: ${context.dishes.trim()}` : null,
     context.intent ? `Intent: ${context.intent}` : null,

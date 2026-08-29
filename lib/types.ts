@@ -29,6 +29,8 @@ export interface Wine {
   pairings: string[];
   fits: PalateFit[]; // one entry per active palate
   summary: string;
+  /** True when the menu lists this wine as a pour. */
+  byTheGlass?: boolean;
 }
 
 export interface AnalyzeResult {
@@ -62,12 +64,21 @@ export interface Palate {
   guest?: boolean;
 }
 
+export type ServeStyle = "bottle" | "glass";
+
+/** Tonight's dollar window. Null means they never set one. */
+export interface PriceBand {
+  min: number;
+  max: number;
+}
+
 // Post-shot refinement — applied AFTER the first result, never before.
 export interface RefineContext {
   occasion: string | null; // Date night, Group dinner, Celebration, Casual
   dishes: string; // free text: "lamb for me, roast chicken for her"
-  intent: string | null; // One bottle for the table, By the glass, Something special
-  spend: number; // 0 cheap night ↔ 100 expensive night
+  intent: string | null; // One bottle for the table, Something special
+  priceBand: PriceBand | null;
+  serve?: ServeStyle;
 }
 
 // Every recognized bottle lives here. Heart is extra — it does not gate storage.

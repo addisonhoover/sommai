@@ -1,31 +1,36 @@
 "use client";
 
 import { useState } from "react";
-import type { RefineContext } from "@/lib/types";
+import { OPEN_BAND } from "@/lib/price";
+import type { PriceBand, RefineContext, ServeStyle } from "@/lib/types";
 import { CloseIcon } from "./icons";
+import { PriceBandControl } from "./PriceBandControl";
 
 const OCCASIONS = ["Date night", "Group dinner", "Celebration", "Casual"];
-const INTENTS = ["One bottle for the table", "By the glass", "Something special"];
+const INTENTS = ["One bottle for the table", "Something special"];
 
 // Principle #2: a ~10 second second pass after the shot — not a form.
-// Occasion / dishes / intent stay as quick chips; spend is the new tilt.
+// Dollar band is what they know at the table; occasion / dishes stay as chips.
 export function RefineSheet({
   open,
   busy,
   initial,
+  serve = "bottle",
   onApply,
   onClose,
 }: {
   open: boolean;
   busy: boolean;
   initial: RefineContext;
+  serve?: ServeStyle;
   onApply: (c: RefineContext) => void;
   onClose: () => void;
 }) {
   const [occasion, setOccasion] = useState<string | null>(initial.occasion);
   const [intent, setIntent] = useState<string | null>(initial.intent);
   const [dishes, setDishes] = useState(initial.dishes);
-  const [spend, setSpend] = useState(initial.spend ?? 50);
+  const [band, setBand] = useState<PriceBand>(initial.priceBand ?? OPEN_BAND);
+  const [bandTouched, setBandTouched] = useState(Boolean(initial.priceBand));
 
   return (
     <div className={`fixed inset-0 z-40 transition ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
@@ -49,22 +54,23 @@ export function RefineSheet({
 
         <div className="px-6 pb-[max(2rem,env(safe-area-inset-bottom))]">
           <p className="mt-1 text-[13px] leading-relaxed text-muted">
-            Those three were a first read. Add a bit — did anything change?
+            Those three were a first read. Nudge the band if the list is richer than you thought.
           </p>
 
-          <p className="eyebrow mt-6">Tonight&apos;s spend</p>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={spend}
-            onChange={(e) => setSpend(Number(e.target.value))}
-            className="spectrum mt-4 w-full"
-            aria-label="Cheap night to expensive night"
-          />
-          <div className="mt-2 flex justify-between text-[12px] text-muted">
-            <span>Cheap night</span>
-            <span>Expensive night</span>
+          <p className="eyebrow mt-6">Tonight&apos;s band</p>
+          <p className="mt-2 text-[12px] leading-relaxed text-faint">
+            A guide, not a wall. Great fits a little outside can still make the three.
+          </p>
+          <div className="mt-3">
+            <PriceBandControl
+              band={band}
+              touched={bandTouched}
+              serve={serve}
+              onChange={(next) => {
+                setBand(next);
+                setBandTouched(true);
+              }}
+            />
           </div>
 
           <p className="eyebrow mt-6">Occasion</p>
@@ -94,24 +100,32 @@ export function RefineSheet({
 
           <p className="eyebrow mt-5">Intent</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {INTENTS.map((i) => (
+            {INTENTS.map((item) => (
               <button
-                key={i}
-                onClick={() => setIntent(intent === i ? null : i)}
+                key={item}
+                onClick={() => setIntent(intent === item ? null : item)}
                 className={`rounded-full border px-4 py-2 text-[13px] transition ${
-                  intent === i
+                  intent === item
                     ? "border-burgundy-light bg-burgundy/25 text-cream"
                     : "border-hairline text-muted hover:text-cream"
                 }`}
               >
-                {i}
+                {item}
               </button>
             ))}
           </div>
 
           <button
             disabled={busy}
-            onClick={() => onApply({ occasion, intent, dishes, spend })}
+            onClick={() =>
+              onApply({
+                occasion,
+                intent,
+                dishes,
+                priceBand: bandTouched ? band : null,
+                serve,
+              })
+            }
             className="mt-8 w-full rounded-full bg-cream py-3.5 text-[15px] font-medium text-ink disabled:opacity-60"
           >
             {busy ? "Taking another look…" : "Take another look"}

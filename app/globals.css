@@ -103,6 +103,47 @@ input.spectrum::-moz-range-thumb {
   cursor: pointer;
 }
 
+input.band-range {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  margin: 0;
+  height: 28px;
+  transform: translateY(-50%);
+  background: none;
+  appearance: none;
+}
+input.band-range::-webkit-slider-thumb {
+  pointer-events: auto;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--color-cream);
+  cursor: pointer;
+  border: 0;
+  position: relative;
+  z-index: 2;
+}
+input.band-range::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+input.band-range::-moz-range-thumb {
+  pointer-events: auto;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-cream);
+  cursor: pointer;
+}
+input.band-range::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

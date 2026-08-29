@@ -37,6 +37,7 @@ export async function POST(req: Request) {
     structure: w.structure,
     flavorNotes: w.flavorNotes,
     currentFits: w.fits.map((f) => ({ palateId: f.palateId, score: f.score })),
+    byTheGlass: Boolean(w.byTheGlass),
   }));
 
   const client = new Anthropic();
@@ -63,7 +64,7 @@ export async function POST(req: Request) {
                 "WINES ALREADY IDENTIFIED (from the scan just taken):",
                 JSON.stringify(compact),
                 "",
-                "Re-score every wine for every palate given this table context (pairing with the dishes, matching the occasion, intent, and tonight's spend). Use each wine's exact wineId and each palate's exact palateId/palateName. Also give one short piece of advice for this table: what changed, if anything.",
+                "Re-score every wine for every palate given this table context (pairing with the dishes, matching the occasion, intent, tonight's dollar band, and bottle vs glass). Use each wine's exact wineId and each palate's exact palateId/palateName. Prefer wines in the band; do not invent prices; do not hide a great fit that is a little outside unless the list is rich enough. Also give one short piece of advice for this table: what changed, if anything.",
               ].join("\n"),
             },
           ],

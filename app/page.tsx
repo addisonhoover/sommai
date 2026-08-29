@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AnalyzeResult, Palate, RefineContext, Wine, WineLogEntry } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AnalyzeResult, Palate, PriceBand, RefineContext, ServeStyle, Wine, WineLogEntry } from "@/lib/types";
 import { ensureHousehold, householdPalates, learningSignal, seatDefaultPool } from "@/lib/palates";
 import { prepareScanImage } from "@/lib/image";
+import { OPEN_BAND, rankPicks } from "@/lib/price";
 import {
   compactKnown,
   flagsFor,
@@ -25,7 +26,7 @@ const LS = {
   journal: "sommai.v2.journal",
   defaultTable: "sommai.v2.defaultTable",
 };
-const EMPTY_CONTEXT: RefineContext = { occasion: null, dishes: "", intent: null, spend: 50 };
+const EMPTY_CONTEXT: RefineContext = { occasion: null, dishes: "", intent: null, priceBand: null };
 
 type View = "camera" | "analyzing" | "result";
 
@@ -38,12 +39,14 @@ function splitDataUrl(dataUrl: string): { base64: string; mediaType: string } {
 export default function Home() {
   const seeded = useMemo(() => householdPalates(), []);
   const [view, setView] = useState<View>("camera");
-  const [thinkPhase, setThinkPhase] = useState<"analyze" | "refine">("analyze");
+  const [thinkPhase, setThinkPhase] = useState<"analyze" | "refine" | "glass">("analyze");
   const [palates, setPalates] = useState<Palate[]>(seeded);
   const [defaultTable, setDefaultTable] = useState<string[]>(seeded.map((p) => p.id));
   const [log, setLog] = useState<WineLogEntry[]>([]);
   const [captured, setCaptured] = useState<string>("");
   const [result, setResult] = useState<AnalyzeResult | null>(null);
+  const [bottleResult, setBottleResult] = useState<AnalyzeResult | null>(null);
+  const [glassResult, setGlassResult] = useState<AnalyzeResult | null>(null);
   const [tableNote, setTableNote] = useState("");
   const [refined, setRefined] = useState(false);
   const [refineCtx, setRefineCtx] = useState<RefineContext>(EMPTY_CONTEXT);
@@ -52,6 +55,24 @@ export default function Home() {
   const [palatesOpen, setPalatesOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [serve, setServe] = useState<ServeStyle>("bottle");
+  const [priceBand, setPriceBand] = useState<PriceBand>(OPEN_BAND);
+  const [bandTouched, setBandTouched] = useState(false);
+
+  const viewRef = useRef(view);
+  const capturedRef = useRef(captured);
+  const serveRef = useRef(serve);
+  const bandRef = useRef({ band: priceBand, touched: bandTouched });
+  const genRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const bandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    viewRef.current = view;
+    capturedRef.current = captured;
+    serveRef.current = serve;
+    bandRef.current = { band: priceBand, touched: bandTouched };
+  }, [view, captured, serve, priceBand, bandTouched]);
 
   // Hydrate from localStorage. Default table seats Erin & Addison together
   // every time the app opens — flip one off for a solo night.
@@ -87,40 +108,76 @@ export default function Home() {
     return act.length ? act : palates.slice(0, 1);
   }, [palates]);
 
+  const liveBand = (): PriceBand | null =>
+    bandRef.current.touched ? bandRef.current.band : null;
+
+  const cacheResult = (next: AnalyzeResult, forServe: ServeStyle) => {
+    if (forServe === "glass") setGlassResult(next);
+    else setBottleResult(next);
+  };
+
   const analyze = useCallback(
-    async (dataUrl: string) => {
+    async (dataUrl: string, opts?: { priceBand?: PriceBand | null; serve?: ServeStyle }) => {
+      const gen = ++genRef.current;
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+      const thisServe = opts?.serve ?? "bottle";
+      const thisBand = opts?.priceBand ?? null;
       const prepared = await prepareScanImage(dataUrl);
+      if (gen !== genRef.current) return;
       const { base64, mediaType } = splitDataUrl(prepared);
+      const publish = (next: AnalyzeResult) => {
+        cacheResult(next, thisServe);
+        if (serveRef.current === thisServe) setResult(next);
+      };
       try {
         const res = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: ac.signal,
           body: JSON.stringify({
             image: base64,
             mediaType,
             palates: activePalates,
             signal: learningSignal(log),
             known: compactKnown(log),
+            priceBand: thisBand,
+            serve: thisServe,
           }),
         });
         const data = await res.json();
+        if (gen !== genRef.current) return;
         if (!res.ok) {
-          setResult({ sourceType: "unknown", note: data.error || "Analysis failed.", wines: [], topPick: "" });
+          publish({
+            sourceType: "unknown",
+            note: data.error || "Analysis failed.",
+            wines: [],
+            topPick: "",
+          });
         } else {
           const seatedIds = activePalates.map((p) => p.id);
-          const wines = lockFits((data as AnalyzeResult).wines ?? [], log, activePalates);
+          const wines = rankPicks(
+            lockFits((data as AnalyzeResult).wines ?? [], log, activePalates),
+            thisBand,
+            thisServe,
+          );
           const next: AnalyzeResult = { ...(data as AnalyzeResult), wines };
-          setResult(next);
+          publish(next);
           if (wines.length) setLog((prev) => upsertLog(prev, wines, next.sourceType, seatedIds, "scan"));
         }
-      } catch {
-        setResult({
+      } catch (err) {
+        if (ac.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
+        if (gen !== genRef.current) return;
+        publish({
           sourceType: "unknown",
           note: "Couldn't reach SommAI. Check your connection and try again.",
           wines: [],
           topPick: "",
         });
       }
+      if (gen !== genRef.current) return;
+      if (serveRef.current !== thisServe) return;
       setView("result");
     },
     [activePalates, log],
@@ -128,23 +185,74 @@ export default function Home() {
 
   const onCapture = useCallback(
     (dataUrl: string) => {
+      if (bandTimerRef.current) clearTimeout(bandTimerRef.current);
       setCaptured(dataUrl);
       setResult(null);
+      setBottleResult(null);
+      setGlassResult(null);
       setTableNote("");
       setRefined(false);
+      setServe("bottle");
+      setPriceBand(OPEN_BAND);
+      setBandTouched(false);
       setRefineCtx(EMPTY_CONTEXT);
       setThinkPhase("analyze");
       setView("analyzing");
-      analyze(dataUrl);
+      analyze(dataUrl, { priceBand: null, serve: "bottle" });
     },
     [analyze],
+  );
+
+  const onBandChange = useCallback(
+    (next: PriceBand) => {
+      setPriceBand(next);
+      setBandTouched(true);
+      setRefineCtx((ctx) => ({ ...ctx, priceBand: next }));
+      if (viewRef.current !== "analyzing") return;
+      if (bandTimerRef.current) clearTimeout(bandTimerRef.current);
+      bandTimerRef.current = setTimeout(() => {
+        if (viewRef.current !== "analyzing") return;
+        const photo = capturedRef.current;
+        if (!photo) return;
+        analyze(photo, { priceBand: next, serve: serveRef.current });
+      }, 480);
+    },
+    [analyze],
+  );
+
+  const onServe = useCallback(
+    (next: ServeStyle) => {
+      if (next === serveRef.current) return;
+      setServe(next);
+      setRefineCtx((ctx) => ({ ...ctx, serve: next }));
+      if (next === "glass" && glassResult) {
+        setResult(glassResult);
+        return;
+      }
+      if (next === "bottle" && bottleResult) {
+        setResult(bottleResult);
+        return;
+      }
+      const photo = capturedRef.current;
+      if (next === "glass" && photo) {
+        setThinkPhase("glass");
+        setView("analyzing");
+        analyze(photo, { priceBand: liveBand(), serve: "glass" });
+      }
+    },
+    [analyze, bottleResult, glassResult],
   );
 
   const applyRefine = useCallback(
     async (ctx: RefineContext) => {
       if (!result?.wines.length) return;
+      const thisServe = ctx.serve ?? serve;
       setRefineBusy(true);
       setRefineCtx(ctx);
+      if (ctx.priceBand) {
+        setPriceBand(ctx.priceBand);
+        setBandTouched(true);
+      }
       setRefineOpen(false);
       setThinkPhase("refine");
       setView("analyzing");
@@ -152,19 +260,29 @@ export default function Home() {
         const res = await fetch("/api/refine", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ wines: result.wines, palates: activePalates, context: ctx }),
+          body: JSON.stringify({
+            wines: result.wines,
+            palates: activePalates,
+            context: { ...ctx, serve: thisServe },
+          }),
         });
         const data = await res.json();
         if (res.ok) {
           const byId = new Map<string, Wine["fits"]>(
             (data.rescored ?? []).map((r: { wineId: string; fits: Wine["fits"] }) => [r.wineId, r.fits]),
           );
-          const wines = result.wines.map((w) => ({ ...w, fits: byId.get(w.id) ?? w.fits }));
-          setResult({
+          const wines = rankPicks(
+            result.wines.map((w) => ({ ...w, fits: byId.get(w.id) ?? w.fits })),
+            ctx.priceBand,
+            thisServe,
+          );
+          const next: AnalyzeResult = {
             ...result,
             topPick: data.topPick || result.topPick,
             wines,
-          });
+          };
+          setResult(next);
+          cacheResult(next, thisServe);
           setTableNote(data.tableNote ?? "");
           setRefined(true);
           setLog((prev) =>
@@ -179,7 +297,7 @@ export default function Home() {
       setRefineBusy(false);
       setView("result");
     },
-    [result, activePalates],
+    [result, activePalates, serve],
   );
 
   const onHeart = useCallback((wine: Wine) => {
@@ -191,6 +309,9 @@ export default function Home() {
   }, []);
 
   const scanAgain = useCallback(() => {
+    if (bandTimerRef.current) clearTimeout(bandTimerRef.current);
+    abortRef.current?.abort();
+    genRef.current += 1;
     setView("camera");
     setResult(null);
     setTableNote("");
@@ -212,7 +333,15 @@ export default function Home() {
 
       {view === "analyzing" && (
         <div className="fixed inset-0 z-20">
-          <Analyzing image={captured} phase={thinkPhase} />
+          <Analyzing
+            image={captured}
+            phase={thinkPhase}
+            serve={serve}
+            band={priceBand}
+            bandTouched={bandTouched}
+            showBand={thinkPhase !== "refine"}
+            onBandChange={onBandChange}
+          />
         </div>
       )}
 
@@ -229,6 +358,8 @@ export default function Home() {
             onPass={onPass}
             onScanAgain={scanAgain}
             onOpenRefine={() => setRefineOpen(true)}
+            serve={serve}
+            onServe={onServe}
           />
         </div>
       )}
@@ -238,6 +369,7 @@ export default function Home() {
           open={refineOpen}
           busy={refineBusy}
           initial={refineCtx}
+          serve={serve}
           onApply={applyRefine}
           onClose={() => setRefineOpen(false)}
         />

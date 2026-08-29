@@ -4,6 +4,7 @@ import {
   ERIN_ID,
   ensureHousehold,
   householdPalates,
+  initialsFor,
   isCoupleProfile,
   isIndividualSeat,
   mergeImportedPalate,
@@ -153,6 +154,11 @@ assert.equal(
 );
 assert.ok(vibeLine("x".repeat(90)).endsWith("…"));
 assert.ok(vibeLine("x".repeat(90)).length <= 72);
+
+assert.equal(initialsFor("Erin"), "E");
+assert.equal(initialsFor("Addison"), "A");
+assert.equal(initialsFor("Mary Kate"), "M");
+assert.equal(initialsFor(""), "?");
 
 assert.equal(
   isCoupleProfile(

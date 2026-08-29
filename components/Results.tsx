@@ -1,13 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import type { AnalyzeResult, Wine } from "@/lib/types";
+import { useRef, useState } from "react";
+import type { AnalyzeResult, ServeStyle, Wine } from "@/lib/types";
 import { WineCard } from "./WineCard";
 import { CameraIcon, ChevronLeft, TuneIcon } from "./icons";
-
-function bestScore(w: Wine): number {
-  return Math.max(0, ...w.fits.map((f) => f.score));
-}
 
 const INITIAL_COUNT = 3;
 
@@ -26,6 +22,8 @@ export function Results({
   onPass,
   onScanAgain,
   onOpenRefine,
+  serve = "bottle",
+  onServe,
 }: {
   result: AnalyzeResult;
   tableNote: string;
@@ -35,6 +33,8 @@ export function Results({
   onPass: (wine: Wine) => void;
   onScanAgain: () => void;
   onOpenRefine: () => void;
+  serve?: ServeStyle;
+  onServe?: (next: ServeStyle) => void;
 }) {
   const [expandedByUser, setExpandedByUser] = useState(false);
   const [page, setPage] = useState(0);
@@ -42,10 +42,7 @@ export function Results({
 
   const expanded = refined || expandedByUser;
 
-  const sorted = useMemo(
-    () => [...result.wines].sort((a, b) => bestScore(b) - bestScore(a)),
-    [result.wines],
-  );
+  const sorted = result.wines;
   const shown = expanded ? sorted : sorted.slice(0, INITIAL_COUNT);
   const hidden = sorted.length - shown.length;
   const extraPage = !expanded && hidden > 0;
@@ -88,9 +85,33 @@ export function Results({
 
       {shown.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center px-10 text-center">
+          {result.sourceType === "menu" && onServe && (
+            <div className="mb-8 flex w-full max-w-sm rounded-full border border-hairline p-1">
+              <button
+                type="button"
+                onClick={() => onServe("bottle")}
+                className={`flex-1 rounded-full py-2 text-[13px] transition ${
+                  serve === "bottle" ? "bg-burgundy text-cream" : "text-muted"
+                }`}
+              >
+                By the bottle
+              </button>
+              <button
+                type="button"
+                onClick={() => onServe("glass")}
+                className={`flex-1 rounded-full py-2 text-[13px] transition ${
+                  serve === "glass" ? "bg-burgundy text-cream" : "text-muted"
+                }`}
+              >
+                By the glass
+              </button>
+            </div>
+          )}
           <p className="text-[15px] leading-relaxed text-muted">
             {result.note ||
-              "No wine could be read from that photo. Try again with a clearer, well-lit shot of the menu or label."}
+              (serve === "glass"
+                ? "No by-the-glass pours were listed on that menu."
+                : "No wine could be read from that photo. Try again with a clearer, well-lit shot of the menu or label.")}
           </p>
           <button
             onClick={onScanAgain}
@@ -103,6 +124,28 @@ export function Results({
       ) : (
         <>
           <div className="px-5 pt-4">
+            {result.sourceType === "menu" && onServe && (
+              <div className="mb-4 flex rounded-full border border-hairline p-1">
+                <button
+                  type="button"
+                  onClick={() => onServe("bottle")}
+                  className={`flex-1 rounded-full py-2 text-[13px] transition ${
+                    serve === "bottle" ? "bg-burgundy text-cream" : "text-muted"
+                  }`}
+                >
+                  By the bottle
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onServe("glass")}
+                  className={`flex-1 rounded-full py-2 text-[13px] transition ${
+                    serve === "glass" ? "bg-burgundy text-cream" : "text-muted"
+                  }`}
+                >
+                  By the glass
+                </button>
+              </div>
+            )}
             <p className="eyebrow">
               {expanded
                 ? `All ${sorted.length} wines · best fit first`
@@ -110,7 +153,9 @@ export function Results({
                   ? `The list · ${shown.length} picks`
                   : result.sourceType === "label"
                     ? "This bottle"
-                    : "Tonight’s pick"}
+                    : serve === "glass"
+                      ? "Tonight’s pours"
+                      : "Tonight’s pick"}
             </p>
             {tableNote && (
               <p className="animate-fade-in mt-3 rounded-2xl border border-burgundy-light/30 bg-burgundy/10 px-4 py-3 text-[13px] leading-relaxed text-cream/90">
