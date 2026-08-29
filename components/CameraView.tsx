@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { acquireCamera, detachCamera } from "@/lib/camera";
+import { acquireCamera, attachCamera, cameraPermissionState, resumeCamera } from "@/lib/camera";
 import { CameraIcon, GlassMark, JournalIcon, PalateIcon, UploadIcon } from "./icons";
 
 // Principle #1: instant camera. No splash, no gate — the camera starts
@@ -22,7 +22,7 @@ export function CameraView({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [camState, setCamState] = useState<"idle" | "live" | "denied">("idle");
+  const [camState, setCamState] = useState<"idle" | "live" | "denied" | "needsTap">("idle");
   const [brandGone, setBrandGone] = useState(false);
 
   useEffect(() => {
@@ -30,47 +30,79 @@ export function CameraView({
     return () => clearTimeout(t);
   }, []);
 
+  const attach = useCallback((stream: MediaStream) => {
+    attachCamera(videoRef.current, stream);
+    setCamState("live");
+  }, []);
+
   useEffect(() => {
-    const video = videoRef.current;
     let cancelled = false;
 
     async function start() {
       try {
+        const perm = await cameraPermissionState();
+        if (cancelled) return;
+        if (perm === "denied") {
+          setCamState("denied");
+          return;
+        }
         const stream = await acquireCamera();
         if (cancelled) return;
-        if (video) {
-          video.srcObject = stream;
-          await video.play().catch(() => {});
-        }
-        setCamState("live");
+        attach(stream);
       } catch {
-        if (!cancelled) setCamState("denied");
+        if (cancelled) return;
+        const perm = await cameraPermissionState();
+        setCamState(perm === "denied" ? "denied" : "needsTap");
       }
     }
     start();
 
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void resumeCamera(videoRef.current)
+        .then((stream) => {
+          if (stream) setCamState("live");
+        })
+        .catch(() => {});
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onVisible);
+
     return () => {
       cancelled = true;
-      detachCamera(video);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onVisible);
+      // Leave the stream running. Stopping it is what makes iPhone ask again.
     };
-  }, []);
+  }, [attach]);
 
-  const shoot = useCallback(() => {
+  const shoot = useCallback(async () => {
     const video = videoRef.current;
-    if (!video || camState !== "live") {
+    if (!video || camState !== "live" || !video.srcObject) {
+      try {
+        const stream = await acquireCamera();
+        attach(stream);
+        await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+      } catch {
+        fileRef.current?.click();
+        return;
+      }
+    }
+    const live = videoRef.current;
+    if (!live || !live.srcObject) {
       fileRef.current?.click();
       return;
     }
-    const w = video.videoWidth || 1080;
-    const h = video.videoHeight || 1440;
+    const w = live.videoWidth || 1080;
+    const h = live.videoHeight || 1440;
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, w, h);
+    ctx.drawImage(live, 0, 0, w, h);
     onCapture(canvas.toDataURL("image/jpeg", 0.85));
-  }, [camState, onCapture]);
+  }, [attach, camState, onCapture]);
 
   const onFile = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,7 +144,9 @@ export function CameraView({
             <p className="mt-5 max-w-xs text-sm leading-relaxed text-muted">
               {camState === "denied"
                 ? "Camera unavailable. Tap the shutter to upload a photo of a wine menu or label instead."
-                : "Opening the camera…"}
+                : camState === "needsTap"
+                  ? "Tap the shutter to open the camera."
+                  : "Opening the camera…"}
             </p>
           </div>
         )}

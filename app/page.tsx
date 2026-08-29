@@ -207,7 +207,7 @@ export default function Home() {
 
   return (
     <>
-      {view === "camera" && (
+      <div className={view === "camera" ? "relative z-0" : "invisible pointer-events-none absolute inset-0 z-0"}>
         <CameraView
           palateNames={activePalates.map((p) => p.name)}
           logCount={log.length}
@@ -215,23 +215,29 @@ export default function Home() {
           onOpenPalates={() => setPalatesOpen(true)}
           onOpenLog={() => setLogOpen(true)}
         />
+      </div>
+
+      {view === "analyzing" && (
+        <div className="fixed inset-0 z-20">
+          <Analyzing image={captured} phase={thinkPhase} />
+        </div>
       )}
 
-      {view === "analyzing" && <Analyzing image={captured} phase={thinkPhase} />}
-
       {view === "result" && result && (
-        <Results
-          result={result}
-          tableNote={tableNote}
-          refined={refined}
-          flags={Object.fromEntries(
-            (result.wines ?? []).map((w) => [w.id, flagsFor(log, w)]),
-          )}
-          onHeart={onHeart}
-          onPass={onPass}
-          onScanAgain={scanAgain}
-          onOpenRefine={() => setRefineOpen(true)}
-        />
+        <div className="fixed inset-0 z-20">
+          <Results
+            result={result}
+            tableNote={tableNote}
+            refined={refined}
+            flags={Object.fromEntries(
+              (result.wines ?? []).map((w) => [w.id, flagsFor(log, w)]),
+            )}
+            onHeart={onHeart}
+            onPass={onPass}
+            onScanAgain={scanAgain}
+            onOpenRefine={() => setRefineOpen(true)}
+          />
+        </div>
       )}
 
       {refineOpen && (
