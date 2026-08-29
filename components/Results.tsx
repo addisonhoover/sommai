@@ -129,24 +129,88 @@ function WineDeck({
   onScanAgain: () => void;
 }) {
   const [page, setPage] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const railRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    left: number;
+    axis: "h" | "v" | null;
+  } | null>(null);
 
-  const goTo = (i: number) => {
+  const snapTo = (i: number, behavior: ScrollBehavior) => {
     const rail = railRef.current;
     if (!rail || i < 0 || i >= pageCount) return;
     const w = rail.clientWidth;
     if (w <= 0) return;
-    rail.scrollTo({ left: i * w, behavior: "smooth" });
+    rail.scrollTo({ left: i * w, behavior });
     setPage(i);
   };
 
+  const goTo = (i: number) => snapTo(i, "smooth");
+
   const onRailScroll = () => {
+    if (dragRef.current?.axis === "h") return;
     const rail = railRef.current;
     if (!rail) return;
     const w = rail.clientWidth;
     if (w <= 0) return;
     const next = Math.round(rail.scrollLeft / w);
     if (next !== page && next >= 0 && next < pageCount) setPage(next);
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const rail = railRef.current;
+    if (!rail || pageCount < 2) return;
+    dragRef.current = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      left: rail.scrollLeft,
+      axis: null,
+    };
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    const rail = railRef.current;
+    if (!drag || drag.id !== e.pointerId || !rail) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (!drag.axis) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      drag.axis = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+      if (drag.axis === "h") {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setDragging(true);
+      }
+    }
+    if (drag.axis !== "h") return;
+    e.preventDefault();
+    rail.scrollLeft = drag.left - dx;
+    const w = rail.clientWidth;
+    if (w > 0) {
+      const live = Math.round(rail.scrollLeft / w);
+      if (live !== page && live >= 0 && live < pageCount) setPage(live);
+    }
+  };
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setDragging(false);
+    const rail = railRef.current;
+    if (!drag || drag.axis !== "h" || !rail) return;
+    const w = rail.clientWidth;
+    if (w <= 0) return;
+    const dx = e.clientX - drag.x;
+    let next = Math.round((drag.left - dx) / w);
+    if (Math.abs(dx) > Math.min(48, w * 0.18)) {
+      next = dx < 0 ? Math.floor(drag.left / w) + 1 : Math.ceil(drag.left / w) - 1;
+    }
+    snapTo(Math.max(0, Math.min(pageCount - 1, next)), "smooth");
   };
 
   return (
@@ -163,7 +227,13 @@ function WineDeck({
       <div
         ref={railRef}
         onScroll={onRailScroll}
-        className="wine-rail no-scrollbar mt-2 flex min-w-0 w-full flex-1 overflow-x-auto overflow-y-hidden"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        className={`wine-rail no-scrollbar mt-2 flex min-w-0 w-full flex-1 overflow-x-auto overflow-y-hidden ${
+          dragging ? "wine-rail-dragging" : ""
+        }`}
       >
         {shown.map((w) => (
           <div key={w.id} className="wine-page no-scrollbar h-full min-w-full w-full shrink-0 overflow-y-auto px-4 pb-4">

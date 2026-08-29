@@ -67,7 +67,11 @@ body {
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
-  touch-action: pan-x pan-y;
+  touch-action: pan-y;
+}
+.wine-rail-dragging {
+  scroll-snap-type: none;
+  scroll-behavior: auto;
 }
 .wine-page {
   scroll-snap-align: start;
