@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Palate, WineLogEntry } from "@/lib/types";
-import { palateToMarkdown } from "@/lib/palates";
+import { ensureHousehold, isCoupleProfile, palateToMarkdown } from "@/lib/palates";
 import { syncConfigured } from "@/lib/supabase";
 import {
   currentUserEmail,
@@ -113,8 +113,23 @@ export function PalatesScreen({
           source: "imported",
           updatedAt: Date.now(),
         };
+        if (isCoupleProfile(palate)) {
+          setError("Erin and Addison each have their own seat. Import one person at a time.");
+          setBusy(false);
+          return;
+        }
         const rest = palates.filter((p) => p.source !== "starter");
-        onChange([...rest, palate]);
+        const existing = rest.find((p) => p.name.trim().toLowerCase() === palate.name.trim().toLowerCase());
+        const merged = existing
+          ? rest.map((p) =>
+              p.id === existing.id
+                ? { ...p, summary: palate.summary, loves: palate.loves, avoids: palate.avoids, favoriteWines: palate.favoriteWines, priceBand: palate.priceBand, source: "imported" as const, updatedAt: palate.updatedAt }
+                : p,
+            )
+          : [...rest, palate];
+        const ensured = ensureHousehold(merged);
+        onChange(ensured.palates);
+        onSaveDefault(ensured.defaultTable);
         setImporting(false);
         setName("");
         setNotes("");

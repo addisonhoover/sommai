@@ -59,16 +59,9 @@ export default function Home() {
   useEffect(() => {
     try {
       const rawPalates = localStorage.getItem(LS.palates);
-      const rawDefault = localStorage.getItem(LS.defaultTable);
       const storedPalates: Palate[] | null = rawPalates ? JSON.parse(rawPalates) : null;
-      const storedDefault: string[] | null = rawDefault ? JSON.parse(rawDefault) : null;
-      const ensured = ensureHousehold(storedPalates, storedDefault);
-      let next = ensured.palates;
-      if (ensured.defaultTable.length) {
-        next = next.map((p) => ({ ...p, active: ensured.defaultTable.includes(p.id) }));
-        if (!next.some((p) => p.active)) next = next.map((p, i) => ({ ...p, active: i < 2 }));
-      }
-      setPalates(next);
+      const ensured = ensureHousehold(storedPalates);
+      setPalates(ensured.palates);
       setDefaultTable(ensured.defaultTable);
       const j = localStorage.getItem(LS.journal);
       if (j) setLog(migrateLog(JSON.parse(j)));
@@ -258,7 +251,7 @@ export default function Home() {
           onChange={setPalates}
           onSaveDefault={(ids) => setDefaultTable(ids)}
           onPulled={(s) => {
-            const ensured = ensureHousehold(s.palates, s.defaultTable);
+            const ensured = ensureHousehold(s.palates);
             setPalates(ensured.palates);
             setLog(migrateLog(s.journal));
             setDefaultTable(ensured.defaultTable);

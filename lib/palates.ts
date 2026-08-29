@@ -106,34 +106,60 @@ function isStarter(p: Palate): boolean {
   return p.source === "starter" || p.id === "starter" || /^my palate$/i.test(p.name);
 }
 
-function named(p: Palate, name: string): boolean {
-  return p.id === name.toLowerCase() || p.name.trim().toLowerCase() === name.toLowerCase();
+function cleanName(name: string): string {
+  return name.trim().toLowerCase().replace(/['’]/g, "");
 }
 
-// Seed Erin & Addison on a fresh phone; keep any palates the household already imported.
-export function ensureHousehold(
-  stored: Palate[] | null,
-  storedDefault: string[] | null,
-): { palates: Palate[]; defaultTable: string[] } {
+export function isIndividualSeat(p: Palate, person: "Erin" | "Addison"): boolean {
+  return cleanName(p.name) === person.toLowerCase();
+}
+
+/** Last night's combined markdown — one card for two people. Never a table seat. */
+export function isCoupleProfile(p: Palate): boolean {
+  const n = cleanName(p.name);
+  if (n === "erin" || n === "addison") return false;
+  if (/\berin\b/.test(n) && /\baddison\b/.test(n)) return true;
+  if (/\bcouples?\b/.test(n) || /\bour palate\b/.test(n) || /\bhousehold\b/.test(n)) return true;
+  const blob = p.summary.toLowerCase().replace(/['’]/g, "");
+  if (/\bcouples?\s+palate\b/.test(blob)) return true;
+  return false;
+}
+
+function bakedFor(person: "Erin" | "Addison"): Palate {
+  return householdPalates().find((p) => p.name === person)!;
+}
+
+// Two people, two seats. A combined "Erin & Addison" import must not own the table.
+export function ensureHousehold(stored: Palate[] | null): { palates: Palate[]; defaultTable: string[] } {
   const baked = householdPalates();
   if (!stored?.length || stored.every(isStarter)) {
     return { palates: baked, defaultTable: [...DEFAULT_TABLE] };
   }
 
-  let next = stored.filter((p) => !isStarter(p));
-  if (!next.length) return { palates: baked, defaultTable: [...DEFAULT_TABLE] };
+  const usable = stored.filter((p) => !isStarter(p) && !isCoupleProfile(p));
+  const erinStored = usable.find((p) => isIndividualSeat(p, "Erin"));
+  const addisonStored = usable.find((p) => isIndividualSeat(p, "Addison"));
+  const extras = usable.filter(
+    (p) => !isIndividualSeat(p, "Erin") && !isIndividualSeat(p, "Addison"),
+  );
 
-  for (const h of baked) {
-    if (!next.some((p) => named(p, h.name))) next = [...next, { ...h, active: true }];
+  if (!erinStored && !addisonStored) {
+    return { palates: baked, defaultTable: [...DEFAULT_TABLE] };
   }
 
-  const erin = next.find((p) => named(p, "Erin"));
-  const addison = next.find((p) => named(p, "Addison"));
-  const householdIds = [erin?.id, addison?.id].filter((id): id is string => !!id);
-  let defaultTable = (storedDefault ?? []).filter((id) => next.some((p) => p.id === id));
-  if (defaultTable.length < 2 && householdIds.length >= 2) defaultTable = householdIds;
+  let erin = erinStored ?? bakedFor("Erin");
+  let addison = addisonStored ?? bakedFor("Addison");
+  if (!erinStored) erin = { ...erin, active: true };
+  if (!addisonStored) addison = { ...addison, active: true };
+  if (!erin.active && !addison.active) {
+    erin = { ...erin, active: true };
+    addison = { ...addison, active: true };
+  }
 
-  return { palates: next, defaultTable };
+  return {
+    palates: [erin, addison, ...extras],
+    defaultTable: [erin.id, addison.id],
+  };
 }
 
 export function learningSignal(log: WineLogEntry[]): {
