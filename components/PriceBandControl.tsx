@@ -100,11 +100,11 @@ export function PriceBandControl({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onKeyDown={onKeyDown}
-        className="price-band relative mt-4 h-12 touch-none select-none outline-none"
+        className="price-band relative mt-4 h-9 touch-none select-none outline-none"
       >
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-surface-2" />
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-surface-2" />
         <div
-          className="price-band-window pointer-events-none absolute top-1/2 h-11 -translate-y-1/2 rounded-full bg-band shadow-[0_0_0_1px_rgba(243,240,234,0.12)]"
+          className="price-band-window pointer-events-none absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full"
           style={{ left: `${left}%`, width: `${width}%` }}
         />
       </div>

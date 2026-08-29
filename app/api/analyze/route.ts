@@ -1,12 +1,24 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import type { KnownWine, Palate, PriceBand, ServeStyle } from "@/lib/types";
-import { SOMM_SYSTEM, WINE_SCHEMA, palateBlock } from "@/lib/prompts";
+import type { KnownWine, Palate, PriceBand, PrintedListing, ServeStyle } from "@/lib/types";
+import { unreadResult, settlePicks } from "@/lib/menu";
+import {
+  EXTRACT_SCHEMA,
+  EXTRACT_SYSTEM,
+  SOMM_SYSTEM,
+  WINE_SCHEMA,
+  palateBlock,
+  printedListBlock,
+} from "@/lib/prompts";
 import { nightGuidance } from "@/lib/price";
-import { capMenuWines, stampWineIds } from "@/lib/wine";
 
 export const runtime = "nodejs";
-export const maxDuration = 45;
+export const maxDuration = 90;
+
+function textOf(message: Anthropic.Message): string | null {
+  const block = message.content.find((b) => b.type === "text");
+  return block && block.type === "text" ? block.text : null;
+}
 
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -42,9 +54,54 @@ export async function POST(req: Request) {
     : "image/jpeg";
 
   const client = new Anthropic();
+  const photo = { type: "image" as const, source: { type: "base64" as const, media_type: media, data: image } };
 
   try {
-    const message = await client.messages.create({
+    // Pass 1: transcribe what is printed. No palates, no wine log — they must not invent bottles.
+    const extractedMsg = await client.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 4096,
+      output_config: { format: { type: "json_schema", schema: EXTRACT_SCHEMA } },
+      system: EXTRACT_SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: [
+            photo,
+            {
+              type: "text",
+              text: "Transcribe every wine actually printed on this photo. Do not recommend. Do not add bottles from memory.",
+            },
+          ],
+        },
+      ],
+    });
+
+    if (extractedMsg.stop_reason === "refusal") {
+      return NextResponse.json({ error: "That image could not be analyzed." }, { status: 422 });
+    }
+
+    const extractedText = textOf(extractedMsg);
+    if (!extractedText) {
+      return NextResponse.json({ error: "No analysis returned." }, { status: 502 });
+    }
+
+    const extracted = JSON.parse(extractedText) as {
+      sourceType?: "menu" | "label" | "unknown";
+      listings?: PrintedListing[];
+      note?: string;
+    };
+    const listings = Array.isArray(extracted.listings) ? extracted.listings : [];
+    const sourceType = extracted.sourceType ?? (listings.length > 1 ? "menu" : listings.length === 1 ? "label" : "unknown");
+
+    if (sourceType === "unknown" || !listings.length) {
+      return NextResponse.json(
+        unreadResult(sourceType === "unknown" ? "unknown" : sourceType, serve, listings),
+      );
+    }
+
+    // Pass 2: pick only from the printed set. Known wines may copy Fit Scores, never add a bottle.
+    const pickMsg = await client.messages.create({
       model: "claude-opus-4-8",
       max_tokens: 4096,
       output_config: { format: { type: "json_schema", schema: WINE_SCHEMA } },
@@ -53,28 +110,35 @@ export async function POST(req: Request) {
         {
           role: "user",
           content: [
-            { type: "image", source: { type: "base64", media_type: media, data: image } },
+            photo,
             {
               type: "text",
-              text: `${palateBlock(palates, signal, known)}\n\n${nightGuidance(priceBand ?? null, serve)}\n\nAnalyze the attached photo and return the structured result with one fit per palate on every wine. For a menu, return at most 3 picks.`,
+              text: [
+                palateBlock(palates, signal, known),
+                "",
+                nightGuidance(priceBand ?? null, serve),
+                "",
+                printedListBlock(listings),
+                "",
+                "Assess the attached photo. Return at most 3 wines, each drawn from the PRINTED LIST. If the list has 1 or 2, return only those. Never add a wine-log bottle that is not printed.",
+              ].join("\n"),
             },
           ],
         },
       ],
     });
 
-    if (message.stop_reason === "refusal") {
+    if (pickMsg.stop_reason === "refusal") {
       return NextResponse.json({ error: "That image could not be analyzed." }, { status: 422 });
     }
 
-    const textBlock = message.content.find((b) => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
+    const pickText = textOf(pickMsg);
+    if (!pickText) {
       return NextResponse.json({ error: "No analysis returned." }, { status: 502 });
     }
 
-    const result = JSON.parse(textBlock.text);
-    result.wines = stampWineIds(capMenuWines(result.wines ?? []));
-    return NextResponse.json(result);
+    const picked = JSON.parse(pickText);
+    return NextResponse.json(settlePicks({ ...picked, sourceType }, listings, serve));
   } catch (err) {
     console.error("analyze error:", err);
     const msg = err instanceof Error ? err.message : "Analysis failed.";

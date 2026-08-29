@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { AnalyzeResult, PriceBand, ServeStyle, Wine } from "@/lib/types";
+import { NO_GLASS_NOTE, UNREADABLE_MENU_NOTE } from "@/lib/menu";
 import { WineCard } from "./WineCard";
 import { CameraIcon, ChevronLeft, TuneIcon } from "./icons";
 import { PriceBandControl } from "./PriceBandControl";
@@ -10,6 +11,36 @@ const INITIAL_COUNT = 3;
 
 function folio(n: number): string {
   return String(n).padStart(2, "0");
+}
+
+function PagerDots({
+  count,
+  page,
+  onGo,
+}: {
+  count: number;
+  page: number;
+  onGo: (i: number) => void;
+}) {
+  if (count < 2) return null;
+  return (
+    <div className="flex items-center gap-2.5">
+      {Array.from({ length: count }).map((_, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onGo(i)}
+          aria-label={`Page ${i + 1}`}
+          aria-current={i === page}
+          className={`rounded-full transition-all ${
+            i === page
+              ? "h-3.5 w-9 bg-burgundy-light shadow-[0_0_16px_rgba(192,80,106,0.75)]"
+              : "h-3.5 w-3.5 bg-cream/45"
+          }`}
+        />
+      ))}
+    </div>
+  );
 }
 
 function MenuNightControls({
@@ -70,6 +101,132 @@ function MenuNightControls({
   );
 }
 
+function WineDeck({
+  shown,
+  pageCount,
+  extraPage,
+  hidden,
+  isList,
+  topName,
+  flags,
+  onHeart,
+  onPass,
+  onExpand,
+  onOpenRefine,
+  onScanAgain,
+}: {
+  shown: Wine[];
+  pageCount: number;
+  extraPage: boolean;
+  hidden: number;
+  isList: boolean;
+  topName: string;
+  flags: Record<string, { hearted: boolean; disliked: boolean }>;
+  onHeart: (wine: Wine) => void;
+  onPass: (wine: Wine) => void;
+  onExpand: () => void;
+  onOpenRefine: () => void;
+  onScanAgain: () => void;
+}) {
+  const [page, setPage] = useState(0);
+  const [turn, setTurn] = useState<"next" | "prev">("next");
+  const [turnKey, setTurnKey] = useState(0);
+  const touchRef = useRef<{ x: number; y: number } | null>(null);
+
+  const goTo = (i: number) => {
+    if (i === page || i < 0 || i >= pageCount) return;
+    setTurn(i > page ? "next" : "prev");
+    setPage(i);
+    setTurnKey((k) => k + 1);
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    touchRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const start = touchRef.current;
+    touchRef.current = null;
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy)) return;
+    goTo(dx < 0 ? page + 1 : page - 1);
+  };
+
+  const current = shown[page];
+
+  return (
+    <>
+      <div
+        className="wine-rail mt-3 flex-1 overflow-hidden px-4 pb-4"
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+      >
+        <div
+          key={`${turnKey}-${page}`}
+          className={`wine-page no-scrollbar h-full overflow-y-auto ${
+            isList ? (turn === "prev" ? "wine-turn-prev" : "wine-turn-next") : ""
+          }`}
+        >
+          {current ? (
+            <>
+              {isList && (
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <PagerDots count={pageCount} page={page} onGo={goTo} />
+                  <p className="text-[11px] tracking-[0.28em] text-faint">
+                    {folio(page + 1)} / {folio(shown.length)}
+                  </p>
+                </div>
+              )}
+              <WineCard
+                wine={current}
+                isTopPick={shown.length > 1 && current.name === topName}
+                hearted={flags[current.id]?.hearted}
+                disliked={flags[current.id]?.disliked}
+                onHeart={() => onHeart(current)}
+                onPass={() => onPass(current)}
+              />
+              <div className="h-2" />
+            </>
+          ) : extraPage ? (
+            <div className="flex h-full flex-col items-center justify-center px-6">
+              <p className="eyebrow">There&apos;s more on the list</p>
+              <p className="mt-3 max-w-[26ch] text-center text-[14px] leading-relaxed text-muted">
+                {hidden} more {hidden === 1 ? "wine" : "wines"} were read from this menu.
+              </p>
+              <button
+                onClick={onExpand}
+                className="mt-6 rounded-full border border-hairline px-6 py-3 text-[14px] text-cream hover:border-burgundy-light/50"
+              >
+                Show the full list
+              </button>
+              <button onClick={onOpenRefine} className="mt-4 text-[13px] text-burgundy-light">
+                or refine for tonight first
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex flex-col items-center gap-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-1">
+        <PagerDots count={pageCount} page={page} onGo={goTo} />
+        {isList && pageCount > 1 && (
+          <p className="text-[12px] tracking-wide text-muted">Turn the page</p>
+        )}
+        <button
+          onClick={onScanAgain}
+          className="flex items-center gap-2 rounded-full bg-cream px-6 py-3 text-[14px] font-medium text-ink shadow-lg shadow-black/40"
+        >
+          <CameraIcon className="h-5 w-5" />
+          Scan another
+        </button>
+      </div>
+    </>
+  );
+}
+
 // Results read like a wine list — pages that turn, not a scroll.
 // Up to three picks to start; anything beyond unlocks on refine or demand.
 export function Results({
@@ -102,8 +259,6 @@ export function Results({
   onBandChange?: (next: PriceBand) => void;
 }) {
   const [expandedByUser, setExpandedByUser] = useState(false);
-  const [page, setPage] = useState(0);
-  const railRef = useRef<HTMLDivElement>(null);
   const isMenu = result.sourceType === "menu";
   const menuGuides = isMenu ? (
     <MenuNightControls
@@ -125,21 +280,17 @@ export function Results({
   const topName = result.topPick || sorted[0]?.name;
   const isList = shown.length > 1 || extraPage;
 
-  const onRailScroll = () => {
-    const rail = railRef.current;
-    if (!rail) return;
-    const w = rail.clientWidth;
-    if (w > 0) setPage(Math.round(rail.scrollLeft / w));
-  };
-
-  const goTo = (i: number) => {
-    const rail = railRef.current;
-    if (!rail) return;
-    rail.scrollTo({ left: i * rail.clientWidth, behavior: "smooth" });
-  };
+  const wineKey = result.wines.map((w) => w.id).join("|");
+  const rawNote = result.note?.trim() ?? "";
+  const looksJson = rawNote.startsWith("{") || rawNote.startsWith("[");
+  const friendlyNote =
+    (!looksJson && rawNote) ||
+    (serve === "glass" ? NO_GLASS_NOTE : UNREADABLE_MENU_NOTE);
+  const glassEmpty = isMenu && serve === "glass" && shown.length === 0 && !result.readFailed;
+  const showReadFail = shown.length === 0 && !glassEmpty;
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-ink">
+    <div className="relative flex h-[100dvh] flex-col bg-ink">
       <header className="z-10 flex items-center justify-between border-b border-hairline bg-ink/80 px-5 py-4 pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur-md">
         <button onClick={onScanAgain} className="flex items-center gap-1.5 text-cream" aria-label="Scan again">
           <ChevronLeft className="h-5 w-5" />
@@ -161,19 +312,18 @@ export function Results({
       {shown.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center px-10 text-center">
           {menuGuides && <div className="mb-8 w-full max-w-sm">{menuGuides}</div>}
-          <p className="text-[15px] leading-relaxed text-muted">
-            {result.note ||
-              (serve === "glass"
-                ? "No by-the-glass pours were listed on that menu."
-                : "No wine could be read from that photo. Try again with a clearer, well-lit shot of the menu or label.")}
-          </p>
-          <button
-            onClick={onScanAgain}
-            className="mt-8 flex items-center gap-2 rounded-full bg-cream px-6 py-3 text-[14px] font-medium text-ink"
-          >
-            <CameraIcon className="h-5 w-5" />
-            Scan again
-          </button>
+          {glassEmpty && (
+            <>
+              <p className="text-[15px] leading-relaxed text-muted">{friendlyNote}</p>
+              <button
+                onClick={onScanAgain}
+                className="mt-8 flex items-center gap-2 rounded-full bg-cream px-6 py-3 text-[14px] font-medium text-ink"
+              >
+                <CameraIcon className="h-5 w-5" />
+                Scan again
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -190,87 +340,55 @@ export function Results({
                       ? "Tonight’s pours"
                       : "Tonight’s pick"}
             </p>
-            {tableNote && (
+            {(tableNote || (!looksJson && rawNote)) && (
               <p className="animate-fade-in mt-3 rounded-2xl border border-burgundy-light/30 bg-burgundy/10 px-4 py-3 text-[13px] leading-relaxed text-cream/90">
-                {tableNote}
+                {tableNote || rawNote}
               </p>
             )}
           </div>
 
-          <div
-            ref={railRef}
-            onScroll={onRailScroll}
-            className="wine-rail no-scrollbar mt-3 flex flex-1 snap-x snap-mandatory overflow-x-auto"
-          >
-            {shown.map((w, i) => (
-              <div
-                key={w.id}
-                className={`wine-page no-scrollbar h-full w-full shrink-0 snap-start overflow-y-auto px-4 pb-4 ${
-                  i === page ? "wine-page-active" : ""
-                }`}
-              >
-                {isList && (
-                  <p className="mb-2 text-right text-[11px] tracking-[0.28em] text-faint">
-                    {folio(i + 1)} / {folio(shown.length)}
-                  </p>
-                )}
-                <WineCard
-                  wine={w}
-                  isTopPick={sorted.length > 1 && w.name === topName}
-                  hearted={flags[w.id]?.hearted}
-                  disliked={flags[w.id]?.disliked}
-                  onHeart={() => onHeart(w)}
-                  onPass={() => onPass(w)}
-                />
-                <div className="h-2" />
-              </div>
-            ))}
-            {extraPage && (
-              <div className="wine-page flex h-full w-full shrink-0 snap-start flex-col items-center justify-center px-10">
-                <p className="eyebrow">There&apos;s more on the list</p>
-                <p className="mt-3 max-w-[26ch] text-center text-[14px] leading-relaxed text-muted">
-                  {hidden} more {hidden === 1 ? "wine" : "wines"} were read from this menu.
-                </p>
-                <button
-                  onClick={() => setExpandedByUser(true)}
-                  className="mt-6 rounded-full border border-hairline px-6 py-3 text-[14px] text-cream hover:border-burgundy-light/50"
-                >
-                  Show the full list
-                </button>
-                <button onClick={onOpenRefine} className="mt-4 text-[13px] text-burgundy-light">
-                  or refine for tonight first
-                </button>
-              </div>
-            )}
-          </div>
+          <WineDeck
+            key={wineKey}
+            shown={shown}
+            pageCount={pageCount}
+            extraPage={extraPage}
+            hidden={hidden}
+            isList={isList}
+            topName={topName}
+            flags={flags}
+            onHeart={onHeart}
+            onPass={onPass}
+            onExpand={() => setExpandedByUser(true)}
+            onOpenRefine={onOpenRefine}
+            onScanAgain={onScanAgain}
+          />
+        </>
+      )}
 
-          <div className="flex flex-col items-center gap-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-1">
-            {pageCount > 1 && (
-              <div className="flex items-center gap-2">
-                {Array.from({ length: pageCount }).map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => goTo(i)}
-                    aria-label={`Page ${i + 1}`}
-                    className={`h-1.5 rounded-full transition-all ${
-                      i === page ? "w-5 bg-burgundy-light" : "w-1.5 bg-hairline"
-                    }`}
-                  />
-                ))}
-              </div>
-            )}
-            {isList && pageCount > 1 && (
-              <p className="text-[11px] tracking-wide text-faint">Turn the page</p>
-            )}
+      {showReadFail && (
+        <div className="absolute inset-0 z-30 flex items-end justify-center bg-ink/75 px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-10 backdrop-blur-sm sm:items-center">
+          <div
+            role="dialog"
+            aria-labelledby="read-fail-title"
+            aria-describedby="read-fail-body"
+            className="w-full max-w-sm rounded-3xl border border-hairline bg-surface p-6 shadow-[0_20px_50px_rgba(0,0,0,0.55)]"
+          >
+            <p className="eyebrow">The list</p>
+            <p id="read-fail-title" className="mt-3 text-[18px] font-semibold text-cream">
+              Couldn&apos;t read this page
+            </p>
+            <p id="read-fail-body" className="mt-3 text-[14px] leading-relaxed text-cream/85">
+              {friendlyNote}
+            </p>
             <button
               onClick={onScanAgain}
-              className="flex items-center gap-2 rounded-full bg-cream px-6 py-3 text-[14px] font-medium text-ink shadow-lg shadow-black/40"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-cream py-3.5 text-[14px] font-medium text-ink"
             >
               <CameraIcon className="h-5 w-5" />
-              Scan another
+              Snap again
             </button>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

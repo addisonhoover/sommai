@@ -38,6 +38,18 @@ export interface AnalyzeResult {
   note: string; // populated when the image is unclear or not a wine
   wines: Wine[];
   topPick: string; // name of the best overall fit
+  /** True when the photo could not be read well enough to name real bottles. */
+  readFailed?: boolean;
+}
+
+/** One line transcribed from the photo — before any recommendation. */
+export interface PrintedListing {
+  name: string;
+  producer: string;
+  vintage: string;
+  region: string;
+  priceText: string;
+  byTheGlass: boolean;
 }
 
 // A person's palate — rich enough to be bootstrapped from imported notes
