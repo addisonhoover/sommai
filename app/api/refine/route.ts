@@ -46,7 +46,6 @@ export async function POST(req: Request) {
     const message = await client.messages.create({
       model: "claude-opus-4-8",
       max_tokens: 2048,
-      temperature: 0,
       output_config: { format: { type: "json_schema", schema: REFINE_SCHEMA } },
       system: SOMM_SYSTEM,
       messages: [
