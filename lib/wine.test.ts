@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { findPrior, lockFits, stampWineIds, upsertLog, wineIdentity, winesMatch } from "./wine";
+import { capMenuWines, findPrior, lockFits, MENU_SHORTLIST_LIMIT, stampWineIds, upsertLog, wineIdentity, winesMatch } from "./wine";
 import type { Palate, Wine, WineLogEntry } from "./types";
 
 function wine(partial: Partial<Wine> & Pick<Wine, "name" | "producer" | "vintage">): Wine {
@@ -65,5 +65,10 @@ assert.ok(prior);
 const addisonSeated: Palate[] = [{ ...seated[0], id: "addison", name: "Addison" }];
 const unlocked = lockFits([b], rescan, addisonSeated);
 assert.equal(unlocked[0].fits[0].score, 94, "new seated palates may rescore");
+
+const overflow = [a, b, wine({ producer: "Ridge", name: "Geyserville", vintage: "2019" }), wine({ producer: "Tablas Creek", name: "Esprit", vintage: "2020" })];
+assert.equal(capMenuWines(overflow).length, MENU_SHORTLIST_LIMIT);
+assert.equal(capMenuWines(overflow)[0].name, a.name);
+assert.deepEqual(capMenuWines([a]), [a]);
 
 console.log("wine lock + log checks passed");

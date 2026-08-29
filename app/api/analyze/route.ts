@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import type { KnownWine, Palate, PriceBand, ServeStyle } from "@/lib/types";
 import { SOMM_SYSTEM, WINE_SCHEMA, palateBlock } from "@/lib/prompts";
 import { nightGuidance } from "@/lib/price";
-import { stampWineIds } from "@/lib/wine";
+import { capMenuWines, stampWineIds } from "@/lib/wine";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     }
 
     const result = JSON.parse(textBlock.text);
-    result.wines = stampWineIds(result.wines ?? []);
+    result.wines = stampWineIds(capMenuWines(result.wines ?? []));
     return NextResponse.json(result);
   } catch (err) {
     console.error("analyze error:", err);

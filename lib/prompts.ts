@@ -30,9 +30,10 @@ export const WINE_SCHEMA = {
     },
     wines: {
       type: "array",
+      // Cap of 3 is enforced in app code (capMenuWines). Anthropic structured
+      // output rejects array maxItems and other value-constraint keywords.
       description:
         "For a wine LIST/menu: at most 3 wines — the best fits for the seated palates, fully assessed. For a bottle LABEL: that single wine.",
-      maxItems: 3,
       items: {
         type: "object",
         additionalProperties: false,
