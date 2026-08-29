@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { IMPORT_SCHEMA, REFINE_SCHEMA, WINE_SCHEMA } from "./prompts";
 
 // Anthropic output_config.format.schema rejects these on arrays/strings/numbers.
@@ -41,3 +43,12 @@ for (const [name, schema] of [
 }
 
 console.log("anthropic schema keyword checks passed");
+
+// Claude Opus 4.8 rejects temperature / top_p / top_k (400 invalid_request_error).
+const SAMPLING = /\b(?:temperature|top_p|top_k)\s*:/;
+for (const file of ["analyze/route.ts", "refine/route.ts", "import/route.ts"]) {
+  const src = readFileSync(join(process.cwd(), "app/api", file), "utf8");
+  assert.equal(SAMPLING.test(src), false, `${file} must not send Opus 4.8-rejected sampling params`);
+}
+
+console.log("anthropic sampling param checks passed");
