@@ -151,9 +151,10 @@ export default function Home() {
         if (!res.ok) {
           publish({
             sourceType: "unknown",
-            note: data.error || "Analysis failed.",
+            note: data.error || "Couldn't read that photo. Snap again — a closer page helps.",
             wines: [],
             topPick: "",
+            readFailed: true,
           });
         } else {
           const seatedIds = activePalates.map((p) => p.id);
@@ -169,12 +170,13 @@ export default function Home() {
       } catch (err) {
         if (ac.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
         if (gen !== genRef.current) return;
-        publish({
-          sourceType: "unknown",
-          note: "Couldn't reach SommAI. Check your connection and try again.",
-          wines: [],
-          topPick: "",
-        });
+          publish({
+            sourceType: "unknown",
+            note: "Couldn't reach SommAI. Check your connection and try again.",
+            wines: [],
+            topPick: "",
+            readFailed: true,
+          });
       }
       if (gen !== genRef.current) return;
       if (serveRef.current !== thisServe) return;

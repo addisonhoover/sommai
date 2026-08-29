@@ -1,4 +1,4 @@
-import type { KnownWine, Palate, RefineContext } from "./types";
+import type { KnownWine, Palate, PrintedListing, RefineContext } from "./types";
 import { HOUSEHOLD_RULES } from "./palates";
 import { formatBand, nightGuidance } from "./price";
 
@@ -26,21 +26,22 @@ export const WINE_SCHEMA = {
     note: {
       type: "string",
       description:
-        "Short, friendly note if the image is blurry, not a wine, or no wine could be identified. Empty string otherwise.",
+        "Short, friendly note if the image is blurry, not a wine, or fewer than three printed bottles could be named. Empty string otherwise. Never dump JSON.",
     },
     wines: {
       type: "array",
       // Cap of 3 is enforced in app code (capMenuWines). Anthropic structured
       // output rejects array maxItems and other value-constraint keywords.
       description:
-        "For a wine LIST/menu: at most 3 wines — the best fits for the seated palates, fully assessed. For a bottle LABEL: that single wine.",
+        "For a wine LIST/menu: at most 3 wines, each actually printed on the photo (or an obvious OCR-close match). Do not invent, do not substitute from the wine log, do not pad to 3. 1 or 2 honest bottles is fine. For a bottle LABEL: that single wine.",
       items: {
         type: "object",
         additionalProperties: false,
         properties: {
           id: {
             type: "string",
-            description: 'Reuse a known wine id when this is the same bottle. Empty string if new.',
+            description:
+              "Reuse a known wine id only when this printed bottle is the same bottle. Empty string if new. Never use a known id to pull in an off-menu wine.",
           },
           name: { type: "string" },
           producer: { type: "string", description: 'Producer / winery, "" if unknown' },
@@ -121,15 +122,59 @@ export const IMPORT_SCHEMA = {
   required: ["name", "summary", "loves", "avoids", "favoriteWines", "priceBand"],
 };
 
+export const EXTRACT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    sourceType: { type: "string", enum: ["menu", "label", "unknown"] },
+    listings: {
+      type: "array",
+      description:
+        "Every wine actually printed on the photo. Empty if you cannot honestly name real bottles. Never add a bottle from memory.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string", description: "Name / varietal as printed" },
+          producer: { type: "string", description: 'Producer as printed, "" if none' },
+          vintage: { type: "string", description: 'Vintage as printed, "" if none' },
+          region: { type: "string", description: 'Region as printed, "" if none' },
+          priceText: { type: "string", description: 'Price exactly as printed, "" if none' },
+          byTheGlass: {
+            type: "boolean",
+            description: "True when this line is in a by-the-glass / pours section",
+          },
+        },
+        required: ["name", "producer", "vintage", "region", "priceText", "byTheGlass"],
+      },
+    },
+    note: {
+      type: "string",
+      description: "Friendly note if the page cannot be read. Empty string otherwise. No JSON.",
+    },
+  },
+  required: ["sourceType", "listings", "note"],
+};
+
+export const EXTRACT_SYSTEM = `You transcribe wine menus and bottle labels. You do not recommend. You do not remember.
+Read only what is printed on the attached photo.
+- sourceType "menu" for a list, "label" for a single bottle label, "unknown" if this is not a readable wine menu or label.
+- listings: every wine you can actually read (name + producer as printed). Empty if you cannot honestly name real bottles.
+- Never invent a bottle. Never add a favorite, a cellar memory, or a wine that is not on this page.
+- Copy prices exactly. Leave fields empty when they are not printed.
+- byTheGlass is true only when that line is listed as a pour / by the glass.`;
+
 export const SOMM_SYSTEM = `You are SommAI — a Master Sommelier rendered as a calm, precise digital concierge.
 You analyze photos of wine menus and bottle labels and give confident, useful guidance to curious diners who enjoy wine but are not experts.
 
 Principles:
 - Read the image carefully. A wine LIST/menu: return at most 3 wines — the best fits for the seated palates, fully assessed. Quality of the shortlist beats a long dump. A bottle LABEL is a single wine.
+- MENU TRUST: every wine in wines[] MUST be a bottle actually printed on the attached image (name + producer as printed, or an obvious OCR-close match). Do not invent. Do not substitute a favorite or a wine-log bottle. Do not pad to 3 with off-menu knowledge. If you can honestly read only 1 or 2 printed bottles, return those. If you cannot name real printed bottles, return 0 wines and a brief friendly note — no fake shortlist.
+- When a PRINTED LIST is provided, pick only from that set. It is the only cellar that exists for this photo.
 - Use what is visible plus your sommelier knowledge to infer flavor, structure, terroir, and pairings. If a detail isn't shown, infer the most likely answer from producer/region/varietal; only leave a field empty when you genuinely cannot tell.
 - structure values are integers 1–5 (body, tannin, acidity, sweetness).
-- You will be given one or more PALATES (people at the table). For EVERY wine, return one fit entry per palate, using that palate's exact palateId and palateName. Scores are 0–100, calibrated to that person: reward what they love, penalize what they avoid, weigh their known favorites and recent verdicts. Be discriminating — spread scores out; don't give everything 80+.
-- Fit scores must be stable. The same wine + the same palates should receive the same scores and notes. Do not re-roll. If KNOWN WINES are provided and you recognize the same bottle (same producer / name / vintage — slight label wording still counts), copy those fits, summary, and wine id instead of inventing new ones. Only rescore when the seated palates differ from that wine's scoredFor list.
+- You will be given one or more PALATES (people at the table). For EVERY wine, return one fit entry per palate, using that palate's exact palateId and palateName. Scores are 0–100, calibrated to that person: reward what they love, penalize what they avoid, weigh their known favorites and recent verdicts. Be discriminating — spread scores out; don't give everything 80+. Palate favorites never add a bottle that is not printed.
+- Fit scores must be stable. The same wine + the same palates should receive the same scores and notes. Do not re-roll. If KNOWN WINES are provided, copy those fits, summary, and wine id only when the printed bottle is the same bottle (same producer / name / vintage — slight label wording still counts). Never insert a known wine that is not on the printed list. Only rescore when the seated palates differ from that wine's scoredFor list.
 - Keep prose elegant and concise. No emojis. No hype. Sound like a trusted expert, not a brochure.
 - Prices: copy what is printed. Never invent a price. If a price band is given, treat it as guidance — prefer in-band wines, allow a great fit a little outside when the list is thin, and stay in band when the list is rich.
 - If asked for by-the-glass, only return wines the menu actually lists as pours.
@@ -168,7 +213,7 @@ export function palateBlock(
   if (known?.length) {
     blocks.push(
       [
-        "KNOWN WINES (already recognized — if you see the same bottle, reuse wine id, fits, and summary; do not invent new scores):",
+        "KNOWN WINES (score memory only — reuse wine id, fits, and summary when a PRINTED bottle is the same bottle; NEVER insert a known wine that is not on the printed list):",
         JSON.stringify(
           known.map((k) => ({
             wineId: k.id,
@@ -198,4 +243,14 @@ export function refineBlock(context: RefineContext): string {
     context.intent ? `Intent: ${context.intent}` : null,
   ].filter(Boolean);
   return bits.join("\n");
+}
+
+export function printedListBlock(listings: PrintedListing[]): string {
+  return [
+    "PRINTED LIST — the only wines that exist for this photo.",
+    "Every wine you return MUST be one of these (name + producer as printed, or an obvious OCR-close match).",
+    "Do not invent. Do not substitute a favorite or a wine-log bottle. Do not pad to 3.",
+    "If this list has 1 or 2 bottles, return only those.",
+    JSON.stringify(listings),
+  ].join("\n");
 }

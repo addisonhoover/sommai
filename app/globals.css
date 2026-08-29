@@ -10,7 +10,7 @@
   --color-faint: #6c6962;
   --color-burgundy: #8e2b43;
   --color-burgundy-light: #c0506a;
-  --color-band: #3f8f62;
+  --color-band: #c0506a;
   --color-hairline: rgba(243, 240, 234, 0.1);
 
   --font-sans: "Helvetica Neue", Helvetica, "Inter", Arial, sans-serif;
@@ -34,6 +34,18 @@
 @keyframes pageTurn {
   from { transform: rotateY(12deg); opacity: 0.55; }
   to { transform: rotateY(0deg); opacity: 1; }
+}
+@keyframes wineTurnNext {
+  from { transform: rotateY(-82deg) translateX(6%); opacity: 0.25; }
+  to { transform: rotateY(0deg) translateX(0); opacity: 1; }
+}
+@keyframes wineTurnPrev {
+  from { transform: rotateY(82deg) translateX(-6%); opacity: 0.25; }
+  to { transform: rotateY(0deg) translateX(0); opacity: 1; }
+}
+@keyframes bandPulse {
+  0%, 100% { box-shadow: 0 2px 10px rgba(192, 80, 106, 0.35); }
+  50% { box-shadow: 0 2px 18px rgba(192, 80, 106, 0.72); }
 }
 
 html, body { height: 100%; }
@@ -64,20 +76,27 @@ body {
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 .wine-rail {
-  perspective: 1400px;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
+  perspective: 1800px;
+  transform-style: preserve-3d;
+  touch-action: pan-y;
 }
 .wine-page {
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
   transform-style: preserve-3d;
 }
 .wine-folio {
   box-shadow: inset 10px 0 14px -12px rgba(243, 240, 234, 0.2);
 }
-.wine-page-active .wine-folio {
-  animation: pageTurn 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+.wine-turn-next {
+  transform-origin: left center;
+  animation: wineTurnNext 0.72s cubic-bezier(0.22, 0.72, 0.18, 1) both;
+}
+.wine-turn-prev {
+  transform-origin: right center;
+  animation: wineTurnPrev 0.72s cubic-bezier(0.22, 0.72, 0.18, 1) both;
+}
+.wine-turn-next .animate-fade-up,
+.wine-turn-prev .animate-fade-up {
+  animation: none;
 }
 
 input.spectrum {
@@ -111,8 +130,13 @@ input.spectrum::-moz-range-thumb {
 .price-band:active {
   cursor: grabbing;
 }
+.price-band-window {
+  background: var(--color-burgundy-light);
+  box-shadow: 0 3px 12px rgba(192, 80, 106, 0.4);
+  animation: bandPulse 2.4s ease-in-out infinite;
+}
 .price-band:focus-visible .price-band-window {
-  box-shadow: 0 0 0 2px var(--color-cream);
+  box-shadow: 0 0 0 2px var(--color-cream), 0 3px 12px rgba(192, 80, 106, 0.4);
 }
 
 @media (prefers-reduced-motion: reduce) {

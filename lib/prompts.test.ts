@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { IMPORT_SCHEMA, REFINE_SCHEMA, WINE_SCHEMA } from "./prompts";
+import { EXTRACT_SCHEMA, IMPORT_SCHEMA, REFINE_SCHEMA, WINE_SCHEMA } from "./prompts";
 
 // Anthropic output_config.format.schema rejects these on arrays/strings/numbers.
 // minItems is only allowed as 0 or 1; we do not send it at all.
@@ -34,6 +34,7 @@ function collectBanned(node: unknown, path: string, hits: string[]): void {
 
 for (const [name, schema] of [
   ["WINE_SCHEMA", WINE_SCHEMA],
+  ["EXTRACT_SCHEMA", EXTRACT_SCHEMA],
   ["REFINE_SCHEMA", REFINE_SCHEMA],
   ["IMPORT_SCHEMA", IMPORT_SCHEMA],
 ] as const) {
