@@ -129,91 +129,148 @@ function WineDeck({
   onScanAgain: () => void;
 }) {
   const [page, setPage] = useState(0);
-  const [turn, setTurn] = useState<"next" | "prev">("next");
-  const [turnKey, setTurnKey] = useState(0);
-  const touchRef = useRef<{ x: number; y: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const railRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    left: number;
+    axis: "h" | "v" | null;
+  } | null>(null);
 
-  const goTo = (i: number) => {
-    if (i === page || i < 0 || i >= pageCount) return;
-    setTurn(i > page ? "next" : "prev");
+  const snapTo = (i: number, behavior: ScrollBehavior) => {
+    const rail = railRef.current;
+    if (!rail || i < 0 || i >= pageCount) return;
+    const w = rail.clientWidth;
+    if (w <= 0) return;
+    rail.scrollTo({ left: i * w, behavior });
     setPage(i);
-    setTurnKey((k) => k + 1);
+  };
+
+  const goTo = (i: number) => snapTo(i, "smooth");
+
+  const onRailScroll = () => {
+    if (dragRef.current?.axis === "h") return;
+    const rail = railRef.current;
+    if (!rail) return;
+    const w = rail.clientWidth;
+    if (w <= 0) return;
+    const next = Math.round(rail.scrollLeft / w);
+    if (next !== page && next >= 0 && next < pageCount) setPage(next);
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    touchRef.current = { x: e.clientX, y: e.clientY };
+    const rail = railRef.current;
+    if (!rail || pageCount < 2) return;
+    dragRef.current = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      left: rail.scrollLeft,
+      axis: null,
+    };
   };
 
-  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    const start = touchRef.current;
-    touchRef.current = null;
-    if (!start) return;
-    const dx = e.clientX - start.x;
-    const dy = e.clientY - start.y;
-    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy)) return;
-    goTo(dx < 0 ? page + 1 : page - 1);
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    const rail = railRef.current;
+    if (!drag || drag.id !== e.pointerId || !rail) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (!drag.axis) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      drag.axis = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+      if (drag.axis === "h") {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setDragging(true);
+      }
+    }
+    if (drag.axis !== "h") return;
+    e.preventDefault();
+    rail.scrollLeft = drag.left - dx;
+    const w = rail.clientWidth;
+    if (w > 0) {
+      const live = Math.round(rail.scrollLeft / w);
+      if (live !== page && live >= 0 && live < pageCount) setPage(live);
+    }
   };
 
-  const current = shown[page];
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setDragging(false);
+    const rail = railRef.current;
+    if (!drag || drag.axis !== "h" || !rail) return;
+    const w = rail.clientWidth;
+    if (w <= 0) return;
+    const dx = e.clientX - drag.x;
+    let next = Math.round((drag.left - dx) / w);
+    if (Math.abs(dx) > Math.min(48, w * 0.18)) {
+      next = dx < 0 ? Math.floor(drag.left / w) + 1 : Math.ceil(drag.left / w) - 1;
+    }
+    snapTo(Math.max(0, Math.min(pageCount - 1, next)), "smooth");
+  };
 
   return (
     <>
-      <div
-        className="wine-rail mt-3 flex-1 overflow-hidden px-4 pb-4"
-        onPointerDown={onPointerDown}
-        onPointerUp={onPointerUp}
-      >
-        <div
-          key={`${turnKey}-${page}`}
-          className={`wine-page no-scrollbar h-full overflow-y-auto ${
-            isList ? (turn === "prev" ? "wine-turn-prev" : "wine-turn-next") : ""
-          }`}
-        >
-          {current ? (
-            <>
-              {isList && (
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <PagerDots count={pageCount} page={page} onGo={goTo} />
-                  <p className="text-[11px] tracking-[0.28em] text-faint">
-                    {folio(page + 1)} / {folio(shown.length)}
-                  </p>
-                </div>
-              )}
-              <WineCard
-                wine={current}
-                isTopPick={shown.length > 1 && current.name === topName}
-                hearted={flags[current.id]?.hearted}
-                disliked={flags[current.id]?.disliked}
-                onHeart={() => onHeart(current)}
-                onPass={() => onPass(current)}
-              />
-              <div className="h-2" />
-            </>
-          ) : extraPage ? (
-            <div className="flex h-full flex-col items-center justify-center px-6">
-              <p className="eyebrow">There&apos;s more on the list</p>
-              <p className="mt-3 max-w-[26ch] text-center text-[14px] leading-relaxed text-muted">
-                {hidden} more {hidden === 1 ? "wine" : "wines"} were read from this menu.
-              </p>
-              <button
-                onClick={onExpand}
-                className="mt-6 rounded-full border border-hairline px-6 py-3 text-[14px] text-cream hover:border-burgundy-light/50"
-              >
-                Show the full list
-              </button>
-              <button onClick={onOpenRefine} className="mt-4 text-[13px] text-burgundy-light">
-                or refine for tonight first
-              </button>
-            </div>
-          ) : null}
+      {isList && (
+        <div className="mt-3 flex items-center justify-between px-4">
+          <PagerDots count={pageCount} page={page} onGo={goTo} />
+          <p className="text-[11px] tracking-[0.28em] text-faint">
+            {folio(Math.min(page, shown.length - 1) + 1)} / {folio(shown.length)}
+          </p>
         </div>
+      )}
+
+      <div
+        ref={railRef}
+        onScroll={onRailScroll}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        className={`wine-rail no-scrollbar mt-2 flex min-w-0 w-full flex-1 overflow-x-auto overflow-y-hidden ${
+          dragging ? "wine-rail-dragging" : ""
+        }`}
+      >
+        {shown.map((w) => (
+          <div key={w.id} className="wine-page no-scrollbar h-full min-w-full w-full shrink-0 overflow-y-auto px-4 pb-4">
+            <WineCard
+              wine={w}
+              isTopPick={shown.length > 1 && w.name === topName}
+              hearted={flags[w.id]?.hearted}
+              disliked={flags[w.id]?.disliked}
+              onHeart={() => onHeart(w)}
+              onPass={() => onPass(w)}
+            />
+            <div className="h-2" />
+          </div>
+        ))}
+        {extraPage && (
+          <div className="wine-page flex h-full w-full shrink-0 flex-col items-center justify-center px-10">
+            <p className="eyebrow">There&apos;s more on the list</p>
+            <p className="mt-3 max-w-[26ch] text-center text-[14px] leading-relaxed text-muted">
+              {hidden} more {hidden === 1 ? "wine" : "wines"} were read from this menu.
+            </p>
+            <button
+              onClick={onExpand}
+              className="mt-6 rounded-full border border-hairline px-6 py-3 text-[14px] text-cream hover:border-burgundy-light/50"
+            >
+              Show the full list
+            </button>
+            <button onClick={onOpenRefine} className="mt-4 text-[13px] text-burgundy-light">
+              or refine for tonight first
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col items-center gap-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-1">
         <PagerDots count={pageCount} page={page} onGo={goTo} />
         {isList && pageCount > 1 && (
-          <p className="text-[12px] tracking-wide text-muted">Turn the page</p>
+          <p className="text-[12px] tracking-wide text-muted">Swipe the list</p>
         )}
         <button
           onClick={onScanAgain}
@@ -227,7 +284,7 @@ function WineDeck({
   );
 }
 
-// Results read like a wine list — pages that turn, not a scroll.
+// Results read like a wine list you push with a thumb — snap pages, not a flip.
 // Up to three picks to start; anything beyond unlocks on refine or demand.
 export function Results({
   result,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { keepPrintedWines, printedMatch, settlePicks, shortListNote, UNREADABLE_MENU_NOTE } from "./menu";
+import { isGlassOnlyMenu, keepPrintedWines, printedMatch, settlePicks, shortListNote, UNREADABLE_MENU_NOTE } from "./menu";
 import type { PrintedListing, Wine } from "./types";
 
 function wine(partial: Partial<Wine> & Pick<Wine, "name" | "producer">): Wine {
@@ -107,5 +107,23 @@ const twoHonest = settlePicks(
 assert.equal(twoHonest.wines.length, 2);
 assert.equal(twoHonest.readFailed, false);
 assert.equal(twoHonest.note, shortListNote(2));
+
+assert.equal(isGlassOnlyMenu(menu), false);
+assert.equal(isGlassOnlyMenu([]), false);
+assert.equal(
+  isGlassOnlyMenu([
+    listing({ name: "Malbec", producer: "House", byTheGlass: true, priceText: "9" }),
+    listing({ name: "Cabernet", producer: "House", byTheGlass: false, priceText: "48" }),
+  ]),
+  false,
+  "a mixed bottle + glass page is not glass-only",
+);
+assert.equal(
+  isGlassOnlyMenu([
+    listing({ name: "Malbec", producer: "House", byTheGlass: true, priceText: "9" }),
+    listing({ name: "Barbera", producer: "House", byTheGlass: true, priceText: "10" }),
+  ]),
+  true,
+);
 
 console.log("printed-list guard checks passed");

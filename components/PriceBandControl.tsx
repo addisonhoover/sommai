@@ -3,13 +3,10 @@
 import { useRef } from "react";
 import type { PriceBand, ServeStyle } from "@/lib/types";
 import {
-  BAND_WIDTH,
-  PRICE_CEILING,
-  PRICE_FLOOR,
-  PRICE_STEP,
   bandLabel,
   formatDollars,
   slideWindow,
+  trackFor,
 } from "@/lib/price";
 
 export function PriceBandControl({
@@ -26,26 +23,27 @@ export function PriceBandControl({
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; grab: number } | null>(null);
 
-  const shown = slideWindow(band.min);
-  const span = PRICE_CEILING - PRICE_FLOOR || 1;
-  const left = ((shown.min - PRICE_FLOOR) / span) * 100;
-  const width = (BAND_WIDTH / span) * 100;
+  const track = trackFor(serve);
+  const shown = slideWindow(band.min, serve);
+  const span = track.ceiling - track.floor || 1;
+  const left = ((shown.min - track.floor) / span) * 100;
+  const width = (track.window / span) * 100;
   const active = touched ? shown : null;
 
   const windowAtPointer = (clientX: number, grab: number) => {
-    const track = trackRef.current;
-    if (!track) return shown;
-    const rect = track.getBoundingClientRect();
+    const el = trackRef.current;
+    if (!el) return shown;
+    const rect = el.getBoundingClientRect();
     if (rect.width <= 0) return shown;
-    const bandPx = (BAND_WIDTH / span) * rect.width;
+    const bandPx = (track.window / span) * rect.width;
     const origin = clientX - rect.left - grab * bandPx;
-    return slideWindow(PRICE_FLOOR + (origin / rect.width) * span);
+    return slideWindow(track.floor + (origin / rect.width) * span, serve);
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    const track = trackRef.current;
-    if (!track) return;
-    const rect = track.getBoundingClientRect();
+    const el = trackRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const bandLeft = (left / 100) * rect.width;
     const bandRight = bandLeft + (width / 100) * rect.width;
@@ -70,16 +68,16 @@ export function PriceBandControl({
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
       e.preventDefault();
-      onChange(slideWindow(shown.min - PRICE_STEP));
+      onChange(slideWindow(shown.min - track.step, serve));
     } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
       e.preventDefault();
-      onChange(slideWindow(shown.min + PRICE_STEP));
+      onChange(slideWindow(shown.min + track.step, serve));
     } else if (e.key === "Home") {
       e.preventDefault();
-      onChange(slideWindow(PRICE_FLOOR));
+      onChange(slideWindow(track.floor, serve));
     } else if (e.key === "End") {
       e.preventDefault();
-      onChange(slideWindow(PRICE_CEILING));
+      onChange(slideWindow(track.ceiling, serve));
     }
   };
 
@@ -91,8 +89,8 @@ export function PriceBandControl({
         role="slider"
         tabIndex={0}
         aria-label="Tonight's price band"
-        aria-valuemin={PRICE_FLOOR}
-        aria-valuemax={PRICE_CEILING - BAND_WIDTH}
+        aria-valuemin={track.floor}
+        aria-valuemax={track.ceiling - track.window}
         aria-valuenow={shown.min}
         aria-valuetext={`${formatDollars(shown.min)} to ${formatDollars(shown.max)}`}
         onPointerDown={onPointerDown}
@@ -100,17 +98,17 @@ export function PriceBandControl({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onKeyDown={onKeyDown}
-        className="price-band relative mt-4 h-9 touch-none select-none outline-none"
+        className="price-band relative mt-4 h-10 touch-none select-none outline-none"
       >
         <div className="pointer-events-none absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-surface-2" />
         <div
-          className="price-band-window pointer-events-none absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full"
+          className="price-band-window pointer-events-none absolute top-1/2 h-[11.5px] -translate-y-1/2 rounded-full"
           style={{ left: `${left}%`, width: `${width}%` }}
         />
       </div>
       <div className="mt-1 flex justify-between text-[11px] text-faint">
-        <span>{formatDollars(PRICE_FLOOR)}</span>
-        <span>{formatDollars(PRICE_CEILING)}</span>
+        <span>{formatDollars(track.floor)}</span>
+        <span>{formatDollars(track.ceiling)}</span>
       </div>
     </div>
   );

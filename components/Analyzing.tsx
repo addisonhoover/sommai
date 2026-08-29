@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { PriceBand, ServeStyle } from "@/lib/types";
 import { shuffleLines } from "@/lib/thinking";
+import { CheckIcon } from "./icons";
 import { PriceBandControl } from "./PriceBandControl";
 
 export function Analyzing({
@@ -12,6 +13,7 @@ export function Analyzing({
   band,
   bandTouched,
   showBand = false,
+  bandSent = false,
   onBandChange,
 }: {
   image: string;
@@ -20,6 +22,7 @@ export function Analyzing({
   band: PriceBand;
   bandTouched: boolean;
   showBand?: boolean;
+  bandSent?: boolean;
   onBandChange?: (next: PriceBand) => void;
 }) {
   const [lines] = useState(() => shuffleLines());
@@ -39,6 +42,15 @@ export function Analyzing({
   return (
     <div className="flex h-[100dvh] flex-col bg-ink px-8">
       <div className="flex flex-1 flex-col items-center justify-center">
+        {showBand && bandSent && (
+          <p
+            className="mb-3 flex items-center gap-0.5 text-[13px] font-medium leading-none text-confirm"
+            aria-label="Tonight's band sent"
+          >
+            <span>$</span>
+            <CheckIcon className="h-3.5 w-3.5" />
+          </p>
+        )}
         <div className={`relative overflow-hidden rounded-2xl border border-hairline ${showBand ? "h-52 w-40" : "h-64 w-52"}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={image} alt="Scanned wine" className="h-full w-full object-cover opacity-70" />

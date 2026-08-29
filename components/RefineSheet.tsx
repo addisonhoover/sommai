@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { DEFAULT_BAND } from "@/lib/price";
+import { slideWindow } from "@/lib/price";
 import type { PriceBand, RefineContext, ServeStyle } from "@/lib/types";
 import { CloseIcon } from "./icons";
 import { PriceBandControl } from "./PriceBandControl";
@@ -31,7 +31,9 @@ export function RefineSheet({
   const [occasion, setOccasion] = useState<string | null>(initial.occasion);
   const [intent, setIntent] = useState<string | null>(initial.intent);
   const [dishes, setDishes] = useState(initial.dishes);
-  const [band, setBand] = useState<PriceBand>(initial.priceBand ?? DEFAULT_BAND);
+  const [band, setBand] = useState<PriceBand>(
+    initial.priceBand ? slideWindow(initial.priceBand.min, serve) : slideWindow(0, serve),
+  );
   const [bandTouched, setBandTouched] = useState(Boolean(initial.priceBand));
 
   return (

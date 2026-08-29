@@ -65,6 +65,11 @@ export function glassListings(listings: PrintedListing[]): PrintedListing[] {
   return listings.filter((l) => l.byTheGlass);
 }
 
+/** A pours-only page — no bottle list — so think uses the glass scale. */
+export function isGlassOnlyMenu(listings: PrintedListing[]): boolean {
+  return listings.length > 0 && listings.every((l) => l.byTheGlass);
+}
+
 export function shortListNote(count: number): string {
   if (count === 1) {
     return "Only one bottle came through clearly. No padding — this is what the page actually showed.";

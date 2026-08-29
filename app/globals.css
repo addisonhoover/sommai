@@ -11,6 +11,7 @@
   --color-burgundy: #8e2b43;
   --color-burgundy-light: #c0506a;
   --color-band: #c0506a;
+  --color-confirm: #2f9e6a;
   --color-hairline: rgba(243, 240, 234, 0.1);
 
   --font-sans: "Helvetica Neue", Helvetica, "Inter", Arial, sans-serif;
@@ -30,20 +31,6 @@
 }
 @keyframes shimmer {
   to { background-position: 200% 0; }
-}
-@keyframes pageTurn {
-  from { transform: rotateY(12deg); opacity: 0.55; }
-  to { transform: rotateY(0deg); opacity: 1; }
-}
-@keyframes wineTurnNext {
-  0% { transform: rotateY(-98deg) translateX(10%) scaleX(0.86); opacity: 0.2; filter: brightness(0.55); }
-  58% { transform: rotateY(-24deg) translateX(3%) scaleX(0.97); opacity: 0.9; filter: brightness(0.88); }
-  100% { transform: rotateY(0deg) translateX(0) scaleX(1); opacity: 1; filter: brightness(1); }
-}
-@keyframes wineTurnPrev {
-  0% { transform: rotateY(98deg) translateX(-10%) scaleX(0.86); opacity: 0.2; filter: brightness(0.55); }
-  58% { transform: rotateY(24deg) translateX(-3%) scaleX(0.97); opacity: 0.9; filter: brightness(0.88); }
-  100% { transform: rotateY(0deg) translateX(0) scaleX(1); opacity: 1; filter: brightness(1); }
 }
 @keyframes bandPulse {
   0%, 100% { box-shadow: 0 2px 8px rgba(192, 80, 106, 0.4); }
@@ -78,37 +65,21 @@ body {
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 .wine-rail {
-  perspective: 1800px;
-  transform-style: preserve-3d;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
   touch-action: pan-y;
 }
+.wine-rail-dragging {
+  scroll-snap-type: none;
+  scroll-behavior: auto;
+}
 .wine-page {
-  position: relative;
-  transform-style: preserve-3d;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 .wine-folio {
   box-shadow: inset 10px 0 14px -12px rgba(243, 240, 234, 0.2);
-}
-.wine-turn-next {
-  transform-origin: left center;
-  animation: wineTurnNext 0.88s cubic-bezier(0.18, 0.7, 0.16, 1) both;
-}
-.wine-turn-prev {
-  transform-origin: right center;
-  animation: wineTurnPrev 0.88s cubic-bezier(0.18, 0.7, 0.16, 1) both;
-}
-.wine-turn-next::before,
-.wine-turn-prev::before {
-  content: "";
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  border-radius: 1.5rem;
-  background: linear-gradient(90deg, rgba(11, 11, 12, 0.35), transparent 22%);
-}
-.wine-turn-next .animate-fade-up,
-.wine-turn-prev .animate-fade-up {
-  animation: none;
 }
 
 input.spectrum {

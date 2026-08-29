@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import type { KnownWine, Palate, PriceBand, PrintedListing, ServeStyle } from "@/lib/types";
-import { unreadResult, settlePicks } from "@/lib/menu";
+import { isGlassOnlyMenu, unreadResult, settlePicks } from "@/lib/menu";
 import {
   EXTRACT_SCHEMA,
   EXTRACT_SYSTEM,
@@ -18,6 +18,10 @@ export const maxDuration = 90;
 function textOf(message: Anthropic.Message): string | null {
   const block = message.content.find((b) => b.type === "text");
   return block && block.type === "text" ? block.text : null;
+}
+
+function ndjson(obj: unknown): Uint8Array {
+  return new TextEncoder().encode(`${JSON.stringify(obj)}\n`);
 }
 
 export async function POST(req: Request) {
@@ -56,92 +60,115 @@ export async function POST(req: Request) {
   const client = new Anthropic();
   const photo = { type: "image" as const, source: { type: "base64" as const, media_type: media, data: image } };
 
-  try {
-    // Pass 1: transcribe what is printed. No palates, no wine log — they must not invent bottles.
-    const extractedMsg = await client.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 4096,
-      output_config: { format: { type: "json_schema", schema: EXTRACT_SCHEMA } },
-      system: EXTRACT_SYSTEM,
-      messages: [
-        {
-          role: "user",
-          content: [
-            photo,
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (obj: unknown) => controller.enqueue(ndjson(obj));
+      try {
+        const extractedMsg = await client.messages.create({
+          model: "claude-opus-4-8",
+          max_tokens: 4096,
+          output_config: { format: { type: "json_schema", schema: EXTRACT_SCHEMA } },
+          system: EXTRACT_SYSTEM,
+          messages: [
             {
-              type: "text",
-              text: "Transcribe every wine actually printed on this photo. Do not recommend. Do not add bottles from memory.",
+              role: "user",
+              content: [
+                photo,
+                {
+                  type: "text",
+                  text: "Transcribe every wine actually printed on this photo. Do not recommend. Do not add bottles from memory.",
+                },
+              ],
             },
           ],
-        },
-      ],
-    });
+        });
 
-    if (extractedMsg.stop_reason === "refusal") {
-      return NextResponse.json({ error: "That image could not be analyzed." }, { status: 422 });
-    }
+        if (extractedMsg.stop_reason === "refusal") {
+          send({ type: "error", error: "That image could not be analyzed." });
+          controller.close();
+          return;
+        }
 
-    const extractedText = textOf(extractedMsg);
-    if (!extractedText) {
-      return NextResponse.json({ error: "No analysis returned." }, { status: 502 });
-    }
+        const extractedText = textOf(extractedMsg);
+        if (!extractedText) {
+          send({ type: "error", error: "No analysis returned." });
+          controller.close();
+          return;
+        }
 
-    const extracted = JSON.parse(extractedText) as {
-      sourceType?: "menu" | "label" | "unknown";
-      listings?: PrintedListing[];
-      note?: string;
-    };
-    const listings = Array.isArray(extracted.listings) ? extracted.listings : [];
-    const sourceType = extracted.sourceType ?? (listings.length > 1 ? "menu" : listings.length === 1 ? "label" : "unknown");
+        const extracted = JSON.parse(extractedText) as {
+          sourceType?: "menu" | "label" | "unknown";
+          listings?: PrintedListing[];
+        };
+        const listings = Array.isArray(extracted.listings) ? extracted.listings : [];
+        const sourceType =
+          extracted.sourceType ?? (listings.length > 1 ? "menu" : listings.length === 1 ? "label" : "unknown");
+        const glassOnly = sourceType === "menu" && isGlassOnlyMenu(listings);
+        const thinkServe: ServeStyle = serve === "glass" || glassOnly ? "glass" : "bottle";
 
-    if (sourceType === "unknown" || !listings.length) {
-      return NextResponse.json(
-        unreadResult(sourceType === "unknown" ? "unknown" : sourceType, serve, listings),
-      );
-    }
+        send({ type: "scan", sourceType, glassOnly });
 
-    // Pass 2: pick only from the printed set. Known wines may copy Fit Scores, never add a bottle.
-    const pickMsg = await client.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 4096,
-      output_config: { format: { type: "json_schema", schema: WINE_SCHEMA } },
-      system: SOMM_SYSTEM,
-      messages: [
-        {
-          role: "user",
-          content: [
-            photo,
+        if (sourceType === "unknown" || !listings.length) {
+          send({ type: "result", ...unreadResult(sourceType === "unknown" ? "unknown" : sourceType, thinkServe, listings) });
+          controller.close();
+          return;
+        }
+
+        const pickMsg = await client.messages.create({
+          model: "claude-opus-4-8",
+          max_tokens: 4096,
+          output_config: { format: { type: "json_schema", schema: WINE_SCHEMA } },
+          system: SOMM_SYSTEM,
+          messages: [
             {
-              type: "text",
-              text: [
-                palateBlock(palates, signal, known),
-                "",
-                nightGuidance(priceBand ?? null, serve),
-                "",
-                printedListBlock(listings),
-                "",
-                "Assess the attached photo. Return at most 3 wines, each drawn from the PRINTED LIST. If the list has 1 or 2, return only those. Never add a wine-log bottle that is not printed.",
-              ].join("\n"),
+              role: "user",
+              content: [
+                photo,
+                {
+                  type: "text",
+                  text: [
+                    palateBlock(palates, signal, known),
+                    "",
+                    nightGuidance(priceBand ?? null, thinkServe),
+                    "",
+                    printedListBlock(listings),
+                    "",
+                    "Assess the attached photo. Return at most 3 wines, each drawn from the PRINTED LIST. If the list has 1 or 2, return only those. Never add a wine-log bottle that is not printed.",
+                  ].join("\n"),
+                },
+              ],
             },
           ],
-        },
-      ],
-    });
+        });
 
-    if (pickMsg.stop_reason === "refusal") {
-      return NextResponse.json({ error: "That image could not be analyzed." }, { status: 422 });
-    }
+        if (pickMsg.stop_reason === "refusal") {
+          send({ type: "error", error: "That image could not be analyzed." });
+          controller.close();
+          return;
+        }
 
-    const pickText = textOf(pickMsg);
-    if (!pickText) {
-      return NextResponse.json({ error: "No analysis returned." }, { status: 502 });
-    }
+        const pickText = textOf(pickMsg);
+        if (!pickText) {
+          send({ type: "error", error: "No analysis returned." });
+          controller.close();
+          return;
+        }
 
-    const picked = JSON.parse(pickText);
-    return NextResponse.json(settlePicks({ ...picked, sourceType }, listings, serve));
-  } catch (err) {
-    console.error("analyze error:", err);
-    const msg = err instanceof Error ? err.message : "Analysis failed.";
-    return NextResponse.json({ error: msg }, { status: 500 });
-  }
+        const picked = JSON.parse(pickText);
+        send({ type: "result", ...settlePicks({ ...picked, sourceType }, listings, thinkServe) });
+        controller.close();
+      } catch (err) {
+        console.error("analyze error:", err);
+        send({ type: "error", error: err instanceof Error ? err.message : "Analysis failed." });
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
 }
