@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AnalyzeResult, Palate, RefineContext, Wine, WineLogEntry } from "@/lib/types";
-import { ensureHousehold, householdPalates, learningSignal } from "@/lib/palates";
+import { ensureHousehold, householdPalates, learningSignal, seatDefaultPool } from "@/lib/palates";
 import { prepareScanImage } from "@/lib/image";
 import {
   compactKnown,
@@ -61,8 +61,8 @@ export default function Home() {
       const rawPalates = localStorage.getItem(LS.palates);
       const storedPalates: Palate[] | null = rawPalates ? JSON.parse(rawPalates) : null;
       const ensured = ensureHousehold(storedPalates);
-      setPalates(ensured.palates);
       setDefaultTable(ensured.defaultTable);
+      setPalates(seatDefaultPool(ensured.palates, ensured.defaultTable));
       const j = localStorage.getItem(LS.journal);
       if (j) setLog(migrateLog(JSON.parse(j)));
     } catch {
@@ -252,9 +252,9 @@ export default function Home() {
           onSaveDefault={(ids) => setDefaultTable(ids)}
           onPulled={(s) => {
             const ensured = ensureHousehold(s.palates);
-            setPalates(ensured.palates);
-            setLog(migrateLog(s.journal));
             setDefaultTable(ensured.defaultTable);
+            setPalates(seatDefaultPool(ensured.palates, ensured.defaultTable));
+            setLog(migrateLog(s.journal));
           }}
           onClose={() => setPalatesOpen(false)}
         />

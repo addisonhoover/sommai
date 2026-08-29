@@ -156,10 +156,77 @@ export function ensureHousehold(stored: Palate[] | null): { palates: Palate[]; d
     addison = { ...addison, active: true };
   }
 
+  const palates = [erin, addison, ...extras];
+  return { palates, defaultTable: defaultTableFor(palates) };
+}
+
+/** Erin, Addison, and anyone marked as usually at the table. */
+export function inDefaultPool(p: Palate): boolean {
+  if (isIndividualSeat(p, "Erin") || isIndividualSeat(p, "Addison")) return true;
+  return p.guest === false;
+}
+
+export function defaultTableFor(palates: Palate[]): string[] {
+  return palates.filter(inDefaultPool).map((p) => p.id);
+}
+
+/** Seat the default pool. Guests stay off until someone taps them on tonight. */
+export function seatDefaultPool(palates: Palate[], defaultTable: string[]): Palate[] {
+  const next = palates.map((p) => ({ ...p, active: defaultTable.includes(p.id) }));
+  if (!next.some((p) => p.active) && next[0]) {
+    next[0] = { ...next[0], active: true };
+  }
+  return next;
+}
+
+function uniqueLines(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const line = value.trim();
+    if (!line) continue;
+    const key = line.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(line);
+  }
+  return out;
+}
+
+/** Fold new notes into an existing seat instead of minting a duplicate card. */
+export function mergeImportedPalate(existing: Palate, incoming: Palate): Palate {
+  const incomingSummary = incoming.summary.trim();
+  const alreadyHas =
+    incomingSummary.length > 0 &&
+    existing.summary.toLowerCase().includes(incomingSummary.slice(0, 80).toLowerCase());
+  const summary = alreadyHas
+    ? existing.summary
+    : [existing.summary, incomingSummary].filter(Boolean).join(" ").trim();
+
   return {
-    palates: [erin, addison, ...extras],
-    defaultTable: [erin.id, addison.id],
+    ...existing,
+    summary,
+    loves: uniqueLines([...existing.loves, ...incoming.loves]),
+    avoids: uniqueLines([...existing.avoids, ...incoming.avoids]),
+    favoriteWines: uniqueLines([...existing.favoriteWines, ...incoming.favoriteWines]),
+    priceBand: incoming.priceBand || existing.priceBand,
+    source: incoming.source === "starter" ? existing.source : incoming.source,
+    updatedAt: Date.now(),
   };
+}
+
+export function vibeLine(summary: string, max = 72): string {
+  const first = summary.split(/(?<=[.!?])\s+/)[0]?.trim() || summary.trim();
+  if (!first) return "";
+  if (first.length <= max) return first;
+  return `${first.slice(0, max - 1).trimEnd()}…`;
+}
+
+export function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0] ?? ""}${parts[parts.length - 1]![0] ?? ""}`.toUpperCase();
 }
 
 export function learningSignal(log: WineLogEntry[]): {

@@ -51,6 +51,15 @@ export interface Palate {
   priceBand: string; // e.g. "$50–110 on a list", "" if unknown
   source: "starter" | "imported" | "learned" | "household";
   updatedAt: number;
+  /** Optional portrait — a small data URL is enough. */
+  photo?: string;
+  /**
+   * Guests are for some nights only. Regulars (guest === false) join the
+   * default pool and sit whenever the app opens. Erin and Addison are always
+   * regulars. Missing guest on anyone else means guest — don't force them
+   * into every scan.
+   */
+  guest?: boolean;
 }
 
 // Post-shot refinement — applied AFTER the first result, never before.

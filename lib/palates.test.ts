@@ -6,6 +6,9 @@ import {
   householdPalates,
   isCoupleProfile,
   isIndividualSeat,
+  mergeImportedPalate,
+  seatDefaultPool,
+  vibeLine,
 } from "./palates";
 import type { Palate } from "./types";
 
@@ -86,6 +89,70 @@ const mixed = ensureHousehold([couple, ...householdPalates()]);
 assert.equal(mixed.palates.some((p) => p.id === "p-combined"), false);
 assert.equal(mixed.palates.filter((p) => p.name === "Erin").length, 1);
 assert.equal(mixed.palates.filter((p) => p.name === "Addison").length, 1);
+
+const guest = palate({
+  id: "p-guest",
+  name: "Mom",
+  guest: true,
+  active: true,
+});
+const withGuest = ensureHousehold([learnedErin, learnedAddison, guest]);
+assert.equal(withGuest.palates.length, 3);
+assert.deepEqual(withGuest.defaultTable, [learnedErin.id, learnedAddison.id]);
+assert.equal(
+  withGuest.palates.find((p) => p.id === "p-guest")?.active,
+  true,
+  "tonight's guest seat is kept until the next open",
+);
+
+const regular = palate({
+  id: "p-regular",
+  name: "Dad",
+  guest: false,
+  active: false,
+});
+const withRegular = ensureHousehold([learnedErin, learnedAddison, regular]);
+assert.ok(withRegular.defaultTable.includes("p-regular"));
+
+const reseated = seatDefaultPool(withGuest.palates, withGuest.defaultTable);
+assert.equal(reseated.find((p) => p.id === "p-guest")?.active, false);
+assert.equal(reseated.find((p) => p.id === learnedErin.id)?.active, true);
+assert.equal(reseated.find((p) => p.id === learnedAddison.id)?.active, true);
+
+const merged = mergeImportedPalate(
+  palate({
+    id: "p-erin",
+    name: "Erin",
+    summary: "Polished Napa.",
+    loves: ["French oak"],
+    avoids: ["jammy"],
+    favoriteWines: ["Artemis"],
+  }),
+  palate({
+    id: "incoming",
+    name: "Erin",
+    summary: "Also earthy Brunello.",
+    loves: ["French oak", "Brunello"],
+    avoids: ["thin"],
+    favoriteWines: ["Altesino"],
+    priceBand: "$100+",
+    source: "imported",
+  }),
+);
+assert.equal(merged.id, "p-erin");
+assert.match(merged.summary, /Polished Napa/);
+assert.match(merged.summary, /earthy Brunello/);
+assert.deepEqual(merged.loves, ["French oak", "Brunello"]);
+assert.deepEqual(merged.avoids, ["jammy", "thin"]);
+assert.deepEqual(merged.favoriteWines, ["Artemis", "Altesino"]);
+assert.equal(merged.priceBand, "$100+");
+
+assert.equal(
+  vibeLine("Polished, fruit-present, structured wines with a complete mid-palate. That middle is the tell."),
+  "Polished, fruit-present, structured wines with a complete mid-palate.",
+);
+assert.ok(vibeLine("x".repeat(90)).endsWith("…"));
+assert.ok(vibeLine("x".repeat(90)).length <= 72);
 
 assert.equal(
   isCoupleProfile(
