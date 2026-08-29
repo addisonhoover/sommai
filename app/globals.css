@@ -10,6 +10,7 @@
   --color-faint: #6c6962;
   --color-burgundy: #8e2b43;
   --color-burgundy-light: #c0506a;
+  --color-band: #3f8f62;
   --color-hairline: rgba(243, 240, 234, 0.1);
 
   --font-sans: "Helvetica Neue", Helvetica, "Inter", Arial, sans-serif;
@@ -103,45 +104,15 @@ input.spectrum::-moz-range-thumb {
   cursor: pointer;
 }
 
-input.band-range {
-  pointer-events: none;
-  position: absolute;
-  inset-inline: 0;
-  top: 50%;
-  margin: 0;
-  height: 28px;
-  transform: translateY(-50%);
-  background: none;
-  appearance: none;
+.price-band {
+  cursor: grab;
+  touch-action: none;
 }
-input.band-range::-webkit-slider-thumb {
-  pointer-events: auto;
-  appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--color-cream);
-  cursor: pointer;
-  border: 0;
-  position: relative;
-  z-index: 2;
+.price-band:active {
+  cursor: grabbing;
 }
-input.band-range::-webkit-slider-runnable-track {
-  height: 4px;
-  background: transparent;
-}
-input.band-range::-moz-range-thumb {
-  pointer-events: auto;
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--color-cream);
-  cursor: pointer;
-}
-input.band-range::-moz-range-track {
-  height: 4px;
-  background: transparent;
+.price-band:focus-visible .price-band-window {
+  box-shadow: 0 0 0 2px var(--color-cream);
 }
 
 @media (prefers-reduced-motion: reduce) {

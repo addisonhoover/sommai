@@ -3,7 +3,9 @@ import type { PriceBand, ServeStyle, Wine } from "./types";
 export const PRICE_FLOOR = 0;
 export const PRICE_CEILING = 300;
 export const PRICE_STEP = 10;
-export const OPEN_BAND: PriceBand = { min: PRICE_FLOOR, max: PRICE_CEILING };
+/** One-night window the slider drags as a unit. Stays this wide at both ends. */
+export const BAND_WIDTH = 50;
+export const DEFAULT_BAND: PriceBand = { min: PRICE_FLOOR, max: PRICE_FLOOR + BAND_WIDTH };
 
 export function clampBand(min: number, max: number): PriceBand {
   const lo = Math.min(min, max);
@@ -11,6 +13,13 @@ export function clampBand(min: number, max: number): PriceBand {
   const clamp = (n: number) =>
     Math.min(PRICE_CEILING, Math.max(PRICE_FLOOR, Math.round(n / PRICE_STEP) * PRICE_STEP));
   return { min: clamp(lo), max: clamp(hi) };
+}
+
+/** Slide a ~$50 window along the track. Does not shrink at the ends. */
+export function slideWindow(min: number): PriceBand {
+  const stepped = Math.round(min / PRICE_STEP) * PRICE_STEP;
+  const lo = Math.min(PRICE_CEILING - BAND_WIDTH, Math.max(PRICE_FLOOR, stepped));
+  return { min: lo, max: lo + BAND_WIDTH };
 }
 
 export function formatDollars(n: number): string {

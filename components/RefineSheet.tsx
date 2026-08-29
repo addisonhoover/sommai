@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { OPEN_BAND } from "@/lib/price";
+import { DEFAULT_BAND } from "@/lib/price";
 import type { PriceBand, RefineContext, ServeStyle } from "@/lib/types";
 import { CloseIcon } from "./icons";
 import { PriceBandControl } from "./PriceBandControl";
@@ -16,6 +16,7 @@ export function RefineSheet({
   busy,
   initial,
   serve = "bottle",
+  showBand = false,
   onApply,
   onClose,
 }: {
@@ -23,13 +24,14 @@ export function RefineSheet({
   busy: boolean;
   initial: RefineContext;
   serve?: ServeStyle;
+  showBand?: boolean;
   onApply: (c: RefineContext) => void;
   onClose: () => void;
 }) {
   const [occasion, setOccasion] = useState<string | null>(initial.occasion);
   const [intent, setIntent] = useState<string | null>(initial.intent);
   const [dishes, setDishes] = useState(initial.dishes);
-  const [band, setBand] = useState<PriceBand>(initial.priceBand ?? OPEN_BAND);
+  const [band, setBand] = useState<PriceBand>(initial.priceBand ?? DEFAULT_BAND);
   const [bandTouched, setBandTouched] = useState(Boolean(initial.priceBand));
 
   return (
@@ -54,24 +56,30 @@ export function RefineSheet({
 
         <div className="px-6 pb-[max(2rem,env(safe-area-inset-bottom))]">
           <p className="mt-1 text-[13px] leading-relaxed text-muted">
-            Those three were a first read. Nudge the band if the list is richer than you thought.
+            {showBand
+              ? "Those three were a first read. Nudge the band if the list is richer than you thought."
+              : "Those three were a first read. Add a little more for this table."}
           </p>
 
-          <p className="eyebrow mt-6">Tonight&apos;s band</p>
-          <p className="mt-2 text-[12px] leading-relaxed text-faint">
-            A guide, not a wall. Great fits a little outside can still make the three.
-          </p>
-          <div className="mt-3">
-            <PriceBandControl
-              band={band}
-              touched={bandTouched}
-              serve={serve}
-              onChange={(next) => {
-                setBand(next);
-                setBandTouched(true);
-              }}
-            />
-          </div>
+          {showBand && (
+            <>
+              <p className="eyebrow mt-6">Tonight&apos;s band</p>
+              <p className="mt-2 text-[12px] leading-relaxed text-faint">
+                A guide, not a wall. Great fits a little outside can still make the three.
+              </p>
+              <div className="mt-3">
+                <PriceBandControl
+                  band={band}
+                  touched={bandTouched}
+                  serve={serve}
+                  onChange={(next) => {
+                    setBand(next);
+                    setBandTouched(true);
+                  }}
+                />
+              </div>
+            </>
+          )}
 
           <p className="eyebrow mt-6">Occasion</p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -122,7 +130,7 @@ export function RefineSheet({
                 occasion,
                 intent,
                 dishes,
-                priceBand: bandTouched ? band : null,
+                priceBand: showBand && bandTouched ? band : null,
                 serve,
               })
             }
