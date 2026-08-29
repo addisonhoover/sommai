@@ -13,6 +13,36 @@ function folio(n: number): string {
   return String(n).padStart(2, "0");
 }
 
+function PagerDots({
+  count,
+  page,
+  onGo,
+}: {
+  count: number;
+  page: number;
+  onGo: (i: number) => void;
+}) {
+  if (count < 2) return null;
+  return (
+    <div className="flex items-center gap-2.5">
+      {Array.from({ length: count }).map((_, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onGo(i)}
+          aria-label={`Page ${i + 1}`}
+          aria-current={i === page}
+          className={`rounded-full transition-all ${
+            i === page
+              ? "h-3.5 w-9 bg-burgundy-light shadow-[0_0_16px_rgba(192,80,106,0.75)]"
+              : "h-3.5 w-3.5 bg-cream/45"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
 function MenuNightControls({
   serve,
   onServe,
@@ -143,9 +173,12 @@ function WineDeck({
           {current ? (
             <>
               {isList && (
-                <p className="mb-2 text-right text-[11px] tracking-[0.28em] text-faint">
-                  {folio(page + 1)} / {folio(shown.length)}
-                </p>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <PagerDots count={pageCount} page={page} onGo={goTo} />
+                  <p className="text-[11px] tracking-[0.28em] text-faint">
+                    {folio(page + 1)} / {folio(shown.length)}
+                  </p>
+                </div>
               )}
               <WineCard
                 wine={current}
@@ -178,23 +211,7 @@ function WineDeck({
       </div>
 
       <div className="flex flex-col items-center gap-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-1">
-        {pageCount > 1 && (
-          <div className="flex items-center gap-3">
-            {Array.from({ length: pageCount }).map((_, i) => (
-              <button
-                key={i}
-                onClick={() => goTo(i)}
-                aria-label={`Page ${i + 1}`}
-                aria-current={i === page}
-                className={`rounded-full transition-all ${
-                  i === page
-                    ? "h-3 w-8 bg-burgundy-light shadow-[0_0_14px_rgba(192,80,106,0.65)]"
-                    : "h-3 w-3 bg-cream/40"
-                }`}
-              />
-            ))}
-          </div>
-        )}
+        <PagerDots count={pageCount} page={page} onGo={goTo} />
         {isList && pageCount > 1 && (
           <p className="text-[12px] tracking-wide text-muted">Turn the page</p>
         )}
