@@ -54,6 +54,14 @@ export function palateFingerprint(ids: string[]): string {
   return [...ids].sort().join(",");
 }
 
+// Anthropic structured output rejects array maxItems, so the menu shortlist
+// is capped here after the model responds — not in the JSON schema.
+export const MENU_SHORTLIST_LIMIT = 3;
+
+export function capMenuWines<T>(wines: T[]): T[] {
+  return wines.slice(0, MENU_SHORTLIST_LIMIT);
+}
+
 export function stampWineIds(wines: Array<Omit<Wine, "id"> & { id?: string }>): Wine[] {
   const used = new Set<string>();
   return wines.map((w, i) => {
