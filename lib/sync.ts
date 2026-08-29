@@ -1,11 +1,11 @@
 "use client";
 
-import type { JournalEntry, Palate } from "./types";
+import type { Palate, WineLogEntry } from "./types";
 import { getSupabase } from "./supabase";
 
 export interface CloudState {
   palates: Palate[];
-  journal: JournalEntry[];
+  journal: WineLogEntry[];
   defaultTable: string[];
 }
 
@@ -67,7 +67,7 @@ export async function pullState(): Promise<{ state: CloudState | null; error: st
   return {
     state: {
       palates: (data.palates as Palate[]) ?? [],
-      journal: (data.journal as JournalEntry[]) ?? [],
+      journal: (data.journal as WineLogEntry[]) ?? [],
       defaultTable: (data.default_table as string[]) ?? [],
     },
     error: null,

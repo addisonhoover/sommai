@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { JournalEntry, Palate } from "@/lib/types";
+import type { Palate, WineLogEntry } from "@/lib/types";
 import { palateToMarkdown } from "@/lib/palates";
 import { syncConfigured } from "@/lib/supabase";
 import {
@@ -24,7 +24,7 @@ export function PalatesScreen({
   onClose,
 }: {
   palates: Palate[];
-  journal: JournalEntry[];
+  journal: WineLogEntry[];
   defaultTable: string[];
   onChange: (next: Palate[]) => void;
   onSaveDefault: (ids: string[]) => void;
@@ -47,10 +47,14 @@ export function PalatesScreen({
     .join(" · ");
 
   const toggleActive = (id: string) => {
-    onChange(palates.map((p) => (p.id === id ? { ...p, active: !p.active } : p)));
+    const next = palates.map((p) => (p.id === id ? { ...p, active: !p.active } : p));
+    if (!next.some((p) => p.active)) return;
+    onChange(next);
   };
 
   const remove = (id: string) => {
+    const target = palates.find((p) => p.id === id);
+    if (target?.source === "household") return;
     const next = palates.filter((p) => p.id !== id);
     if (next.length === 0) return; // the instant scan must always work
     if (!next.some((p) => p.active)) next[0] = { ...next[0], active: true };
@@ -202,11 +206,13 @@ export function PalatesScreen({
         <input ref={fileRef} type="file" accept=".md,.txt,text/markdown,text/plain" hidden onChange={onFile} />
 
         {/* ---- tonight's table ---- */}
-        <div className="mt-8 flex items-end justify-between">
-          <div>
-            <p className="eyebrow">Tonight&apos;s table</p>
-            <p className="mt-1 text-[12.5px] text-muted">Who&apos;s drinking? Each gets a fit score.</p>
-          </div>
+        <div className="mt-8">
+          <p className="eyebrow">Tonight&apos;s table</p>
+          <p className="mt-2 text-[13px] leading-relaxed text-cream/90">
+            Erin and Addison drink together. Both seats are on when you open the app. Flip one off
+            for a solo bottle.
+          </p>
+          <p className="mt-1 text-[12.5px] text-muted">Each seated person gets a Fit Score.</p>
         </div>
 
         <div className="mt-4 space-y-4">
@@ -228,24 +234,36 @@ export function PalatesScreen({
                     )}
                   </h3>
                   <p className="mt-0.5 text-[11px] uppercase tracking-wider text-faint">
-                    {p.source === "starter" ? "Starter" : p.source === "imported" ? "Imported" : "Learning"}
-                    {" · "}updated {new Date(p.updatedAt).toLocaleDateString()}
+                    {p.active ? "Seated" : "Sitting out"}
+                    {" · "}
+                    {p.source === "household"
+                      ? "Household"
+                      : p.source === "starter"
+                        ? "Starter"
+                        : p.source === "imported"
+                          ? "Imported"
+                          : "Learning"}
                   </p>
                 </div>
-                <button
-                  onClick={() => toggleActive(p.id)}
-                  aria-pressed={p.active}
-                  className={`relative h-7 w-12 shrink-0 rounded-full transition ${
-                    p.active ? "bg-burgundy" : "bg-surface-2"
-                  }`}
-                  aria-label={`${p.active ? "Remove" : "Seat"} ${p.name} at the table`}
-                >
-                  <span
-                    className={`absolute top-1 h-5 w-5 rounded-full bg-cream transition-all ${
-                      p.active ? "left-6" : "left-1"
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <button
+                    onClick={() => toggleActive(p.id)}
+                    aria-pressed={p.active}
+                    className={`relative h-8 w-14 rounded-full transition ${
+                      p.active ? "bg-burgundy" : "bg-surface-2"
                     }`}
-                  />
-                </button>
+                    aria-label={`${p.active ? "Unseat" : "Seat"} ${p.name}`}
+                  >
+                    <span
+                      className={`absolute top-1 h-6 w-6 rounded-full bg-cream transition-all ${
+                        p.active ? "left-7" : "left-1"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-[10px] uppercase tracking-wider text-faint">
+                    {p.active ? "Seated" : "Off"}
+                  </span>
+                </div>
               </div>
 
               <p className="mt-3 text-[13px] leading-relaxed text-cream/85">{p.summary}</p>
@@ -271,7 +289,7 @@ export function PalatesScreen({
                   <DownloadIcon className="h-4 w-4" />
                   Export .md
                 </button>
-                {palates.length > 1 && (
+                {palates.length > 1 && p.source !== "household" && (
                   <button
                     onClick={() => remove(p.id)}
                     className="rounded-full px-4 py-2 text-[13px] text-faint hover:text-cream"
@@ -288,7 +306,7 @@ export function PalatesScreen({
         <div className="mt-5 rounded-2xl border border-hairline bg-surface p-4">
           <p className="text-[13px] text-cream/90">
             {defaultTable.length
-              ? `Every scan starts as: ${defaultNames}`
+              ? `Every scan starts with ${defaultNames} seated.`
               : "No default table set — the app starts with whoever was last active."}
           </p>
           {!defaultMatchesActive && (

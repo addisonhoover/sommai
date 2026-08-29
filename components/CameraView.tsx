@@ -8,16 +8,16 @@ import { CameraIcon, GlassMark, JournalIcon, PalateIcon, UploadIcon } from "./ic
 // viewfinder and never blocks the shutter.
 export function CameraView({
   palateNames,
-  journalCount,
+  logCount,
   onCapture,
   onOpenPalates,
-  onOpenJournal,
+  onOpenLog,
 }: {
   palateNames: string[];
-  journalCount: number;
+  logCount: number;
   onCapture: (dataUrl: string) => void;
   onOpenPalates: () => void;
-  onOpenJournal: () => void;
+  onOpenLog: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -92,7 +92,11 @@ export function CameraView({
   );
 
   const palateLabel =
-    palateNames.length > 1 ? palateNames.join(" · ") : palateNames[0] ?? "My palate";
+    palateNames.length === 2
+      ? `${palateNames[0]} & ${palateNames[1]}`
+      : palateNames.length > 1
+        ? palateNames.join(" · ")
+        : palateNames[0] ?? "The table";
 
   return (
     <div className="relative flex h-[100dvh] flex-col bg-ink">
@@ -138,17 +142,20 @@ export function CameraView({
           className="flex max-w-[70%] items-center gap-2 rounded-full border border-hairline bg-ink/40 px-3.5 py-2 backdrop-blur-md"
         >
           <PalateIcon className="h-4 w-4 shrink-0 text-burgundy-light" />
-          <span className="truncate text-[13px] font-medium text-cream">{palateLabel}</span>
+          <span className="flex min-w-0 flex-col items-start">
+            <span className="text-[9px] uppercase tracking-[0.22em] text-burgundy-light">The table</span>
+            <span className="truncate text-[13px] font-medium text-cream">{palateLabel}</span>
+          </span>
         </button>
         <button
-          onClick={onOpenJournal}
+          onClick={onOpenLog}
           className="relative grid h-10 w-10 place-items-center rounded-full border border-hairline bg-ink/40 backdrop-blur-md"
-          aria-label="Wine journal"
+          aria-label="Wine log"
         >
           <JournalIcon className="h-5 w-5 text-cream" />
-          {journalCount > 0 && (
+          {logCount > 0 && (
             <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-burgundy px-1 text-[11px] font-semibold text-cream">
-              {journalCount}
+              {logCount}
             </span>
           )}
         </button>

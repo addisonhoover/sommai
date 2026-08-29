@@ -1,20 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { shuffleLines } from "@/lib/thinking";
 
-const LINES = [
-  "Reading the list…",
-  "Decoding terroir & structure…",
-  "Weighing each palate…",
-  "Composing pairings…",
-];
-
-export function Analyzing({ image }: { image: string }) {
+export function Analyzing({
+  image,
+  phase = "analyze",
+}: {
+  image: string;
+  phase?: "analyze" | "refine";
+}) {
+  const [lines] = useState(() => shuffleLines());
   const [i, setI] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setI((v) => (v + 1) % LINES.length), 1500);
+    const t = setInterval(() => setI((v) => (v + 1) % lines.length), 1600);
     return () => clearInterval(t);
-  }, []);
+  }, [lines.length]);
 
   return (
     <div className="flex h-[100dvh] flex-col items-center justify-center bg-ink px-8">
@@ -26,9 +27,11 @@ export function Analyzing({ image }: { image: string }) {
           <div className="h-px w-full animate-[shimmer_1.6s_linear_infinite] bg-gradient-to-r from-transparent via-burgundy-light to-transparent bg-[length:200%_100%]" />
         </div>
       </div>
-      <p className="eyebrow mt-9">SommAI is tasting</p>
-      <p key={i} className="animate-fade-in mt-3 text-[15px] text-cream">
-        {LINES[i]}
+      <p className="eyebrow mt-9">
+        {phase === "refine" ? "SommAI is taking another look" : "SommAI is tasting"}
+      </p>
+      <p key={`${phase}-${i}`} className="animate-fade-in mt-3 text-center text-[15px] text-cream">
+        {lines[i]}
       </p>
     </div>
   );

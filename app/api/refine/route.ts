@@ -4,10 +4,10 @@ import type { Palate, RefineContext, Wine } from "@/lib/types";
 import { REFINE_SCHEMA, SOMM_SYSTEM, palateBlock, refineBlock } from "@/lib/prompts";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 20;
 
 // Text-only re-ranking of an existing analysis with table context.
-// No re-scan, no image — fast by design.
+// No re-scan, no image — a ~10 second second pass by design.
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json({ error: "Server is missing ANTHROPIC_API_KEY." }, { status: 500 });
@@ -44,7 +44,8 @@ export async function POST(req: Request) {
   try {
     const message = await client.messages.create({
       model: "claude-opus-4-8",
-      max_tokens: 4096,
+      max_tokens: 2048,
+      temperature: 0,
       output_config: { format: { type: "json_schema", schema: REFINE_SCHEMA } },
       system: SOMM_SYSTEM,
       messages: [
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
                 "WINES ALREADY IDENTIFIED (from the scan just taken):",
                 JSON.stringify(compact),
                 "",
-                "Re-score every wine for every palate given this table context (pairing with the dishes, matching the occasion and intent). Use each wine's exact wineId and each palate's exact palateId/palateName. Also give one short piece of advice for this table.",
+                "Re-score every wine for every palate given this table context (pairing with the dishes, matching the occasion, intent, and tonight's spend). Use each wine's exact wineId and each palate's exact palateId/palateName. Also give one short piece of advice for this table: what changed, if anything.",
               ].join("\n"),
             },
           ],

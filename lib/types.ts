@@ -39,7 +39,7 @@ export interface AnalyzeResult {
 }
 
 // A person's palate — rich enough to be bootstrapped from imported notes
-// and to keep learning from journal verdicts.
+// and to keep learning from wine-log verdicts.
 export interface Palate {
   id: string;
   name: string; // "Addison", "Erin"
@@ -49,7 +49,7 @@ export interface Palate {
   avoids: string[];
   favoriteWines: string[]; // specific wines/producers/regions known to land
   priceBand: string; // e.g. "$50–110 on a list", "" if unknown
-  source: "starter" | "imported" | "learned";
+  source: "starter" | "imported" | "learned" | "household";
   updatedAt: number;
 }
 
@@ -58,10 +58,34 @@ export interface RefineContext {
   occasion: string | null; // Date night, Group dinner, Celebration, Casual
   dishes: string; // free text: "lamb for me, roast chicken for her"
   intent: string | null; // One bottle for the table, By the glass, Something special
+  spend: number; // 0 cheap night ↔ 100 expensive night
 }
 
+// Every recognized bottle lives here. Heart is extra — it does not gate storage.
+export interface WineLogEntry {
+  wine: Wine;
+  hearted: boolean;
+  disliked: boolean;
+  firstSeen: number;
+  lastSeen: number;
+  scanCount: number;
+  scoredFor: string[]; // palate ids these Fit Scores are locked to
+  sourceType: AnalyzeResult["sourceType"];
+}
+
+// Legacy journal shape (pre-wine-log). migrateLog() accepts this.
 export interface JournalEntry {
   wine: Wine;
   verdict: "loved" | "disliked";
   savedAt: number;
+}
+
+export interface KnownWine {
+  id: string;
+  name: string;
+  producer: string;
+  vintage: string;
+  fits: PalateFit[];
+  summary: string;
+  scoredFor: string[];
 }

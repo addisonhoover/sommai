@@ -1,10 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import type { Palate } from "@/lib/types";
+import type { KnownWine, Palate } from "@/lib/types";
 import { SOMM_SYSTEM, WINE_SCHEMA, palateBlock } from "@/lib/prompts";
+import { stampWineIds } from "@/lib/wine";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 45;
 
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -19,6 +20,7 @@ export async function POST(req: Request) {
     mediaType?: string;
     palates?: Palate[];
     signal?: { loved: string[]; disliked: string[] };
+    known?: KnownWine[];
   };
   try {
     body = await req.json();
@@ -26,7 +28,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const { image, mediaType = "image/jpeg", palates, signal } = body;
+  const { image, mediaType = "image/jpeg", palates, signal, known } = body;
   if (!image || !palates?.length) {
     return NextResponse.json({ error: "Missing image or palates." }, { status: 400 });
   }
@@ -41,7 +43,8 @@ export async function POST(req: Request) {
   try {
     const message = await client.messages.create({
       model: "claude-opus-4-8",
-      max_tokens: 8192,
+      max_tokens: 4096,
+      temperature: 0,
       output_config: { format: { type: "json_schema", schema: WINE_SCHEMA } },
       system: SOMM_SYSTEM,
       messages: [
@@ -51,7 +54,7 @@ export async function POST(req: Request) {
             { type: "image", source: { type: "base64", media_type: media, data: image } },
             {
               type: "text",
-              text: `${palateBlock(palates, signal)}\n\nAnalyze the attached photo and return the structured result with one fit per palate on every wine.`,
+              text: `${palateBlock(palates, signal, known)}\n\nAnalyze the attached photo and return the structured result with one fit per palate on every wine. For a menu, return at most 3 picks.`,
             },
           ],
         },
@@ -68,9 +71,7 @@ export async function POST(req: Request) {
     }
 
     const result = JSON.parse(textBlock.text);
-    result.wines = (result.wines ?? []).map(
-      (w: Record<string, unknown>, i: number) => ({ ...w, id: `${Date.now()}-${i}` }),
-    );
+    result.wines = stampWineIds(result.wines ?? []);
     return NextResponse.json(result);
   } catch (err) {
     console.error("analyze error:", err);
