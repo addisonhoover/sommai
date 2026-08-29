@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { acquireCamera, detachCamera } from "@/lib/camera";
 import { CameraIcon, GlassMark, JournalIcon, PalateIcon, UploadIcon } from "./icons";
 
 // Principle #1: instant camera. No splash, no gate — the camera starts
@@ -30,33 +31,27 @@ export function CameraView({
   }, []);
 
   useEffect(() => {
-    let stream: MediaStream | null = null;
+    const video = videoRef.current;
     let cancelled = false;
 
     async function start() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
-          audio: false,
-        });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {});
+        const stream = await acquireCamera();
+        if (cancelled) return;
+        if (video) {
+          video.srcObject = stream;
+          await video.play().catch(() => {});
         }
         setCamState("live");
       } catch {
-        setCamState("denied");
+        if (!cancelled) setCamState("denied");
       }
     }
     start();
 
     return () => {
       cancelled = true;
-      stream?.getTracks().forEach((t) => t.stop());
+      detachCamera(video);
     };
   }, []);
 
@@ -106,6 +101,7 @@ export function CameraView({
           ref={videoRef}
           playsInline
           muted
+          autoPlay
           className={`h-full w-full object-cover transition-opacity duration-700 ${
             camState === "live" ? "opacity-100" : "opacity-0"
           }`}

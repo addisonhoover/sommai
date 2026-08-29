@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   description:
     "Snap a wine menu or label and get instant, palate-matched recommendations, pairings, and a personal fit score for everyone at the table.",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
