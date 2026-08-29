@@ -56,20 +56,24 @@ function StructureBar({ label, value }: { label: string; value: number }) {
 export function WineCard({
   wine,
   isTopPick,
-  verdict,
-  onSave,
+  hearted,
+  disliked,
+  onHeart,
+  onPass,
 }: {
   wine: Wine;
   isTopPick?: boolean;
-  verdict?: "loved" | "disliked";
-  onSave: (v: "loved" | "disliked") => void;
+  hearted?: boolean;
+  disliked?: boolean;
+  onHeart: () => void;
+  onPass: () => void;
 }) {
   const title = [wine.producer, wine.name].filter(Boolean).join(" ").trim() || wine.name;
   const sub = [wine.vintage, wine.region].filter(Boolean).join(" · ");
   const solo = wine.fits.length <= 1;
 
   return (
-    <article className="animate-fade-up rounded-3xl border border-hairline bg-surface p-6">
+    <article className="wine-folio animate-fade-up rounded-3xl border border-hairline bg-surface p-6">
       {isTopPick && (
         <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-burgundy/20 px-3 py-1">
           <span className="h-1.5 w-1.5 rounded-full bg-burgundy-light" />
@@ -147,20 +151,20 @@ export function WineCard({
 
       <div className="mt-6 flex gap-3 border-t border-hairline pt-5">
         <button
-          onClick={() => onSave("loved")}
+          onClick={onHeart}
           className={`flex flex-1 items-center justify-center gap-2 rounded-full py-3 text-[14px] font-medium transition ${
-            verdict === "loved"
+            hearted
               ? "bg-burgundy text-cream"
               : "border border-hairline text-cream hover:border-burgundy-light/50"
           }`}
         >
-          <HeartIcon filled={verdict === "loved"} className="h-4 w-4" />
-          {verdict === "loved" ? "Saved" : "Save"}
+          <HeartIcon filled={hearted} className="h-4 w-4" />
+          {hearted ? "Hearted" : "Heart"}
         </button>
         <button
-          onClick={() => onSave("disliked")}
+          onClick={onPass}
           className={`rounded-full px-5 py-3 text-[14px] font-medium transition ${
-            verdict === "disliked"
+            disliked
               ? "bg-surface-2 text-muted"
               : "border border-hairline text-muted hover:text-cream"
           }`}

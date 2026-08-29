@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { acquireCamera, attachCamera, cameraPermissionState, resumeCamera } from "@/lib/camera";
 import { CameraIcon, GlassMark, JournalIcon, PalateIcon, UploadIcon } from "./icons";
 
 // Principle #1: instant camera. No splash, no gate — the camera starts
@@ -8,20 +9,20 @@ import { CameraIcon, GlassMark, JournalIcon, PalateIcon, UploadIcon } from "./ic
 // viewfinder and never blocks the shutter.
 export function CameraView({
   palateNames,
-  journalCount,
+  logCount,
   onCapture,
   onOpenPalates,
-  onOpenJournal,
+  onOpenLog,
 }: {
   palateNames: string[];
-  journalCount: number;
+  logCount: number;
   onCapture: (dataUrl: string) => void;
   onOpenPalates: () => void;
-  onOpenJournal: () => void;
+  onOpenLog: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [camState, setCamState] = useState<"idle" | "live" | "denied">("idle");
+  const [camState, setCamState] = useState<"idle" | "live" | "denied" | "needsTap">("idle");
   const [brandGone, setBrandGone] = useState(false);
 
   useEffect(() => {
@@ -29,53 +30,79 @@ export function CameraView({
     return () => clearTimeout(t);
   }, []);
 
+  const attach = useCallback((stream: MediaStream) => {
+    attachCamera(videoRef.current, stream);
+    setCamState("live");
+  }, []);
+
   useEffect(() => {
-    let stream: MediaStream | null = null;
     let cancelled = false;
 
     async function start() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
-          audio: false,
-        });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+        const perm = await cameraPermissionState();
+        if (cancelled) return;
+        if (perm === "denied") {
+          setCamState("denied");
           return;
         }
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {});
-        }
-        setCamState("live");
+        const stream = await acquireCamera();
+        if (cancelled) return;
+        attach(stream);
       } catch {
-        setCamState("denied");
+        if (cancelled) return;
+        const perm = await cameraPermissionState();
+        setCamState(perm === "denied" ? "denied" : "needsTap");
       }
     }
     start();
 
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void resumeCamera(videoRef.current)
+        .then((stream) => {
+          if (stream) setCamState("live");
+        })
+        .catch(() => {});
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onVisible);
+
     return () => {
       cancelled = true;
-      stream?.getTracks().forEach((t) => t.stop());
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onVisible);
+      // Leave the stream running. Stopping it is what makes iPhone ask again.
     };
-  }, []);
+  }, [attach]);
 
-  const shoot = useCallback(() => {
+  const shoot = useCallback(async () => {
     const video = videoRef.current;
-    if (!video || camState !== "live") {
+    if (!video || camState !== "live" || !video.srcObject) {
+      try {
+        const stream = await acquireCamera();
+        attach(stream);
+        await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+      } catch {
+        fileRef.current?.click();
+        return;
+      }
+    }
+    const live = videoRef.current;
+    if (!live || !live.srcObject) {
       fileRef.current?.click();
       return;
     }
-    const w = video.videoWidth || 1080;
-    const h = video.videoHeight || 1440;
+    const w = live.videoWidth || 1080;
+    const h = live.videoHeight || 1440;
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, w, h);
+    ctx.drawImage(live, 0, 0, w, h);
     onCapture(canvas.toDataURL("image/jpeg", 0.85));
-  }, [camState, onCapture]);
+  }, [attach, camState, onCapture]);
 
   const onFile = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -92,7 +119,11 @@ export function CameraView({
   );
 
   const palateLabel =
-    palateNames.length > 1 ? palateNames.join(" · ") : palateNames[0] ?? "My palate";
+    palateNames.length === 2
+      ? `${palateNames[0]} & ${palateNames[1]}`
+      : palateNames.length > 1
+        ? palateNames.join(" · ")
+        : palateNames[0] ?? "The table";
 
   return (
     <div className="relative flex h-[100dvh] flex-col bg-ink">
@@ -102,6 +133,7 @@ export function CameraView({
           ref={videoRef}
           playsInline
           muted
+          autoPlay
           className={`h-full w-full object-cover transition-opacity duration-700 ${
             camState === "live" ? "opacity-100" : "opacity-0"
           }`}
@@ -112,7 +144,9 @@ export function CameraView({
             <p className="mt-5 max-w-xs text-sm leading-relaxed text-muted">
               {camState === "denied"
                 ? "Camera unavailable. Tap the shutter to upload a photo of a wine menu or label instead."
-                : "Opening the camera…"}
+                : camState === "needsTap"
+                  ? "Tap the shutter to open the camera."
+                  : "Opening the camera…"}
             </p>
           </div>
         )}
@@ -138,17 +172,20 @@ export function CameraView({
           className="flex max-w-[70%] items-center gap-2 rounded-full border border-hairline bg-ink/40 px-3.5 py-2 backdrop-blur-md"
         >
           <PalateIcon className="h-4 w-4 shrink-0 text-burgundy-light" />
-          <span className="truncate text-[13px] font-medium text-cream">{palateLabel}</span>
+          <span className="flex min-w-0 flex-col items-start">
+            <span className="text-[9px] uppercase tracking-[0.22em] text-burgundy-light">The table</span>
+            <span className="truncate text-[13px] font-medium text-cream">{palateLabel}</span>
+          </span>
         </button>
         <button
-          onClick={onOpenJournal}
+          onClick={onOpenLog}
           className="relative grid h-10 w-10 place-items-center rounded-full border border-hairline bg-ink/40 backdrop-blur-md"
-          aria-label="Wine journal"
+          aria-label="Wine log"
         >
           <JournalIcon className="h-5 w-5 text-cream" />
-          {journalCount > 0 && (
+          {logCount > 0 && (
             <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-burgundy px-1 text-[11px] font-semibold text-cream">
-              {journalCount}
+              {logCount}
             </span>
           )}
         </button>

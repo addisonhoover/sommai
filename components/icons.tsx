@@ -94,6 +94,14 @@ export function ChevronLeft(props: P) {
   );
 }
 
+export function ChevronRight(props: P) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+      <path d="M9.5 6 15 12l-5.5 6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function PlusIcon(props: P) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>

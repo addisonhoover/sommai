@@ -6,6 +6,13 @@ export const metadata: Metadata = {
   description:
     "Snap a wine menu or label and get instant, palate-matched recommendations, pairings, and a personal fit score for everyone at the table.",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

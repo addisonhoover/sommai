@@ -30,6 +30,10 @@
 @keyframes shimmer {
   to { background-position: 200% 0; }
 }
+@keyframes pageTurn {
+  from { transform: rotateY(12deg); opacity: 0.55; }
+  to { transform: rotateY(0deg); opacity: 1; }
+}
 
 html, body { height: 100%; }
 
@@ -57,6 +61,88 @@ body {
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.wine-rail {
+  perspective: 1400px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.wine-page {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  transform-style: preserve-3d;
+}
+.wine-folio {
+  box-shadow: inset 10px 0 14px -12px rgba(243, 240, 234, 0.2);
+}
+.wine-page-active .wine-folio {
+  animation: pageTurn 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+input.spectrum {
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6c6962, var(--color-burgundy-light));
+  outline: none;
+}
+input.spectrum::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--color-cream);
+  cursor: pointer;
+}
+input.spectrum::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-cream);
+  cursor: pointer;
+}
+
+input.band-range {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  margin: 0;
+  height: 28px;
+  transform: translateY(-50%);
+  background: none;
+  appearance: none;
+}
+input.band-range::-webkit-slider-thumb {
+  pointer-events: auto;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--color-cream);
+  cursor: pointer;
+  border: 0;
+  position: relative;
+  z-index: 2;
+}
+input.band-range::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+input.band-range::-moz-range-thumb {
+  pointer-events: auto;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-cream);
+  cursor: pointer;
+}
+input.band-range::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

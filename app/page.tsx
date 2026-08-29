@@ -1,27 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type {
-  AnalyzeResult,
-  JournalEntry,
-  Palate,
-  RefineContext,
-  Wine,
-} from "@/lib/types";
-import { learningSignal, starterPalate } from "@/lib/palates";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AnalyzeResult, Palate, PriceBand, RefineContext, ServeStyle, Wine, WineLogEntry } from "@/lib/types";
+import { ensureHousehold, householdPalates, learningSignal, seatDefaultPool } from "@/lib/palates";
+import { prepareScanImage } from "@/lib/image";
+import { OPEN_BAND, rankPicks } from "@/lib/price";
+import {
+  compactKnown,
+  flagsFor,
+  lockFits,
+  migrateLog,
+  toggleDisliked,
+  toggleHeart,
+  upsertLog,
+} from "@/lib/wine";
 import { CameraView } from "@/components/CameraView";
 import { Analyzing } from "@/components/Analyzing";
 import { Results } from "@/components/Results";
 import { RefineSheet } from "@/components/RefineSheet";
 import { PalatesScreen } from "@/components/PalatesScreen";
-import { Journal } from "@/components/Journal";
+import { WineLog } from "@/components/Journal";
 
 const LS = {
   palates: "sommai.v2.palates",
   journal: "sommai.v2.journal",
   defaultTable: "sommai.v2.defaultTable",
 };
-const EMPTY_CONTEXT: RefineContext = { occasion: null, dishes: "", intent: null };
+const EMPTY_CONTEXT: RefineContext = { occasion: null, dishes: "", intent: null, priceBand: null };
 
 type View = "camera" | "analyzing" | "result";
 
@@ -32,53 +37,68 @@ function splitDataUrl(dataUrl: string): { base64: string; mediaType: string } {
 }
 
 export default function Home() {
+  const seeded = useMemo(() => householdPalates(), []);
   const [view, setView] = useState<View>("camera");
-  const [palates, setPalates] = useState<Palate[]>([starterPalate()]);
-  const [defaultTable, setDefaultTable] = useState<string[]>([]);
-  const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const [thinkPhase, setThinkPhase] = useState<"analyze" | "refine" | "glass">("analyze");
+  const [palates, setPalates] = useState<Palate[]>(seeded);
+  const [defaultTable, setDefaultTable] = useState<string[]>(seeded.map((p) => p.id));
+  const [log, setLog] = useState<WineLogEntry[]>([]);
   const [captured, setCaptured] = useState<string>("");
   const [result, setResult] = useState<AnalyzeResult | null>(null);
+  const [bottleResult, setBottleResult] = useState<AnalyzeResult | null>(null);
+  const [glassResult, setGlassResult] = useState<AnalyzeResult | null>(null);
   const [tableNote, setTableNote] = useState("");
   const [refined, setRefined] = useState(false);
   const [refineCtx, setRefineCtx] = useState<RefineContext>(EMPTY_CONTEXT);
   const [refineOpen, setRefineOpen] = useState(false);
   const [refineBusy, setRefineBusy] = useState(false);
   const [palatesOpen, setPalatesOpen] = useState(false);
-  const [journalOpen, setJournalOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [serve, setServe] = useState<ServeStyle>("bottle");
+  const [priceBand, setPriceBand] = useState<PriceBand>(OPEN_BAND);
+  const [bandTouched, setBandTouched] = useState(false);
 
-  // Hydrate from localStorage. The default table decides who is
-  // "at the table" every time the app opens — no per-night fiddling.
+  const viewRef = useRef(view);
+  const capturedRef = useRef(captured);
+  const serveRef = useRef(serve);
+  const bandRef = useRef({ band: priceBand, touched: bandTouched });
+  const genRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const bandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    viewRef.current = view;
+    capturedRef.current = captured;
+    serveRef.current = serve;
+    bandRef.current = { band: priceBand, touched: bandTouched };
+  }, [view, captured, serve, priceBand, bandTouched]);
+
+  // Hydrate from localStorage. Default table seats Erin & Addison together
+  // every time the app opens — flip one off for a solo night.
+  /* eslint-disable react-hooks/set-state-in-effect -- one-time localStorage hydrate */
   useEffect(() => {
     try {
       const rawPalates = localStorage.getItem(LS.palates);
-      const rawDefault = localStorage.getItem(LS.defaultTable);
-      const defaults: string[] = rawDefault ? JSON.parse(rawDefault) : [];
-      setDefaultTable(defaults);
-      if (rawPalates) {
-        let parsed: Palate[] = JSON.parse(rawPalates);
-        if (parsed.length) {
-          if (defaults.length) {
-            parsed = parsed.map((p) => ({ ...p, active: defaults.includes(p.id) }));
-            if (!parsed.some((p) => p.active)) parsed[0] = { ...parsed[0], active: true };
-          }
-          setPalates(parsed);
-        }
-      }
+      const storedPalates: Palate[] | null = rawPalates ? JSON.parse(rawPalates) : null;
+      const ensured = ensureHousehold(storedPalates);
+      setDefaultTable(ensured.defaultTable);
+      setPalates(seatDefaultPool(ensured.palates, ensured.defaultTable));
       const j = localStorage.getItem(LS.journal);
-      if (j) setJournal(JSON.parse(j));
+      if (j) setLog(migrateLog(JSON.parse(j)));
     } catch {
       /* ignore */
     }
     setHydrated(true);
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (hydrated) localStorage.setItem(LS.palates, JSON.stringify(palates));
   }, [palates, hydrated]);
   useEffect(() => {
-    if (hydrated) localStorage.setItem(LS.journal, JSON.stringify(journal));
-  }, [journal, hydrated]);
+    if (hydrated) localStorage.setItem(LS.journal, JSON.stringify(log));
+  }, [log, hydrated]);
   useEffect(() => {
     if (hydrated) localStorage.setItem(LS.defaultTable, JSON.stringify(defaultTable));
   }, [defaultTable, hydrated]);
@@ -88,133 +108,260 @@ export default function Home() {
     return act.length ? act : palates.slice(0, 1);
   }, [palates]);
 
-  const verdicts = useMemo(() => {
-    const map: Record<string, "loved" | "disliked"> = {};
-    for (const e of journal) map[e.wine.id] = e.verdict;
-    return map;
-  }, [journal]);
+  const liveBand = (): PriceBand | null =>
+    bandRef.current.touched ? bandRef.current.band : null;
+
+  const cacheResult = (next: AnalyzeResult, forServe: ServeStyle) => {
+    if (forServe === "glass") setGlassResult(next);
+    else setBottleResult(next);
+  };
 
   const analyze = useCallback(
-    async (dataUrl: string) => {
-      const { base64, mediaType } = splitDataUrl(dataUrl);
+    async (dataUrl: string, opts?: { priceBand?: PriceBand | null; serve?: ServeStyle }) => {
+      const gen = ++genRef.current;
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+      const thisServe = opts?.serve ?? "bottle";
+      const thisBand = opts?.priceBand ?? null;
+      const prepared = await prepareScanImage(dataUrl);
+      if (gen !== genRef.current) return;
+      const { base64, mediaType } = splitDataUrl(prepared);
+      const publish = (next: AnalyzeResult) => {
+        cacheResult(next, thisServe);
+        if (serveRef.current === thisServe) setResult(next);
+      };
       try {
         const res = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: ac.signal,
           body: JSON.stringify({
             image: base64,
             mediaType,
             palates: activePalates,
-            signal: learningSignal(journal),
+            signal: learningSignal(log),
+            known: compactKnown(log),
+            priceBand: thisBand,
+            serve: thisServe,
           }),
         });
         const data = await res.json();
+        if (gen !== genRef.current) return;
         if (!res.ok) {
-          setResult({ sourceType: "unknown", note: data.error || "Analysis failed.", wines: [], topPick: "" });
+          publish({
+            sourceType: "unknown",
+            note: data.error || "Analysis failed.",
+            wines: [],
+            topPick: "",
+          });
         } else {
-          setResult(data as AnalyzeResult);
+          const seatedIds = activePalates.map((p) => p.id);
+          const wines = rankPicks(
+            lockFits((data as AnalyzeResult).wines ?? [], log, activePalates),
+            thisBand,
+            thisServe,
+          );
+          const next: AnalyzeResult = { ...(data as AnalyzeResult), wines };
+          publish(next);
+          if (wines.length) setLog((prev) => upsertLog(prev, wines, next.sourceType, seatedIds, "scan"));
         }
-      } catch {
-        setResult({
+      } catch (err) {
+        if (ac.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
+        if (gen !== genRef.current) return;
+        publish({
           sourceType: "unknown",
           note: "Couldn't reach SommAI. Check your connection and try again.",
           wines: [],
           topPick: "",
         });
       }
+      if (gen !== genRef.current) return;
+      if (serveRef.current !== thisServe) return;
       setView("result");
     },
-    [activePalates, journal],
+    [activePalates, log],
   );
 
   const onCapture = useCallback(
     (dataUrl: string) => {
+      if (bandTimerRef.current) clearTimeout(bandTimerRef.current);
       setCaptured(dataUrl);
       setResult(null);
+      setBottleResult(null);
+      setGlassResult(null);
       setTableNote("");
       setRefined(false);
+      setServe("bottle");
+      setPriceBand(OPEN_BAND);
+      setBandTouched(false);
       setRefineCtx(EMPTY_CONTEXT);
+      setThinkPhase("analyze");
       setView("analyzing");
-      analyze(dataUrl);
+      analyze(dataUrl, { priceBand: null, serve: "bottle" });
     },
     [analyze],
   );
 
-  // Principle #2 — re-rank in place with table context, no re-scan.
+  const onBandChange = useCallback(
+    (next: PriceBand) => {
+      setPriceBand(next);
+      setBandTouched(true);
+      setRefineCtx((ctx) => ({ ...ctx, priceBand: next }));
+      if (viewRef.current !== "analyzing") return;
+      if (bandTimerRef.current) clearTimeout(bandTimerRef.current);
+      bandTimerRef.current = setTimeout(() => {
+        if (viewRef.current !== "analyzing") return;
+        const photo = capturedRef.current;
+        if (!photo) return;
+        analyze(photo, { priceBand: next, serve: serveRef.current });
+      }, 480);
+    },
+    [analyze],
+  );
+
+  const onServe = useCallback(
+    (next: ServeStyle) => {
+      if (next === serveRef.current) return;
+      setServe(next);
+      setRefineCtx((ctx) => ({ ...ctx, serve: next }));
+      if (next === "glass" && glassResult) {
+        setResult(glassResult);
+        return;
+      }
+      if (next === "bottle" && bottleResult) {
+        setResult(bottleResult);
+        return;
+      }
+      const photo = capturedRef.current;
+      if (next === "glass" && photo) {
+        setThinkPhase("glass");
+        setView("analyzing");
+        analyze(photo, { priceBand: liveBand(), serve: "glass" });
+      }
+    },
+    [analyze, bottleResult, glassResult],
+  );
+
   const applyRefine = useCallback(
     async (ctx: RefineContext) => {
       if (!result?.wines.length) return;
+      const thisServe = ctx.serve ?? serve;
       setRefineBusy(true);
       setRefineCtx(ctx);
+      if (ctx.priceBand) {
+        setPriceBand(ctx.priceBand);
+        setBandTouched(true);
+      }
+      setRefineOpen(false);
+      setThinkPhase("refine");
+      setView("analyzing");
       try {
         const res = await fetch("/api/refine", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ wines: result.wines, palates: activePalates, context: ctx }),
+          body: JSON.stringify({
+            wines: result.wines,
+            palates: activePalates,
+            context: { ...ctx, serve: thisServe },
+          }),
         });
         const data = await res.json();
         if (res.ok) {
           const byId = new Map<string, Wine["fits"]>(
             (data.rescored ?? []).map((r: { wineId: string; fits: Wine["fits"] }) => [r.wineId, r.fits]),
           );
-          setResult({
+          const wines = rankPicks(
+            result.wines.map((w) => ({ ...w, fits: byId.get(w.id) ?? w.fits })),
+            ctx.priceBand,
+            thisServe,
+          );
+          const next: AnalyzeResult = {
             ...result,
             topPick: data.topPick || result.topPick,
-            wines: result.wines.map((w) => ({ ...w, fits: byId.get(w.id) ?? w.fits })),
-          });
+            wines,
+          };
+          setResult(next);
+          cacheResult(next, thisServe);
           setTableNote(data.tableNote ?? "");
           setRefined(true);
-          setRefineOpen(false);
+          setLog((prev) =>
+            upsertLog(prev, wines, result.sourceType, activePalates.map((p) => p.id), "refine"),
+          );
+        } else {
+          setRefineOpen(true);
         }
       } catch {
-        /* keep sheet open so they can retry */
+        setRefineOpen(true);
       }
       setRefineBusy(false);
+      setView("result");
     },
-    [result, activePalates],
+    [result, activePalates, serve],
   );
 
-  const onSave = useCallback((wine: Wine, verdict: "loved" | "disliked") => {
-    setJournal((j) => {
-      const existing = j.find((e) => e.wine.id === wine.id);
-      if (existing && existing.verdict === verdict) {
-        return j.filter((e) => e.wine.id !== wine.id);
-      }
-      return [{ wine, verdict, savedAt: Date.now() }, ...j.filter((e) => e.wine.id !== wine.id)];
-    });
+  const onHeart = useCallback((wine: Wine) => {
+    setLog((prev) => toggleHeart(prev, wine));
+  }, []);
+
+  const onPass = useCallback((wine: Wine) => {
+    setLog((prev) => toggleDisliked(prev, wine));
   }, []);
 
   const scanAgain = useCallback(() => {
+    if (bandTimerRef.current) clearTimeout(bandTimerRef.current);
+    abortRef.current?.abort();
+    genRef.current += 1;
     setView("camera");
     setResult(null);
     setTableNote("");
     setRefined(false);
+    setThinkPhase("analyze");
   }, []);
 
   return (
     <>
-      {view === "camera" && (
+      <div className={view === "camera" ? "relative z-0" : "invisible pointer-events-none absolute inset-0 z-0"}>
         <CameraView
           palateNames={activePalates.map((p) => p.name)}
-          journalCount={journal.length}
+          logCount={log.length}
           onCapture={onCapture}
           onOpenPalates={() => setPalatesOpen(true)}
-          onOpenJournal={() => setJournalOpen(true)}
+          onOpenLog={() => setLogOpen(true)}
         />
+      </div>
+
+      {view === "analyzing" && (
+        <div className="fixed inset-0 z-20">
+          <Analyzing
+            image={captured}
+            phase={thinkPhase}
+            serve={serve}
+            band={priceBand}
+            bandTouched={bandTouched}
+            showBand={thinkPhase !== "refine"}
+            onBandChange={onBandChange}
+          />
+        </div>
       )}
 
-      {view === "analyzing" && <Analyzing image={captured} />}
-
       {view === "result" && result && (
-        <Results
-          result={result}
-          tableNote={tableNote}
-          refined={refined}
-          verdicts={verdicts}
-          onSave={onSave}
-          onScanAgain={scanAgain}
-          onOpenRefine={() => setRefineOpen(true)}
-        />
+        <div className="fixed inset-0 z-20">
+          <Results
+            result={result}
+            tableNote={tableNote}
+            refined={refined}
+            flags={Object.fromEntries(
+              (result.wines ?? []).map((w) => [w.id, flagsFor(log, w)]),
+            )}
+            onHeart={onHeart}
+            onPass={onPass}
+            onScanAgain={scanAgain}
+            onOpenRefine={() => setRefineOpen(true)}
+            serve={serve}
+            onServe={onServe}
+          />
+        </div>
       )}
 
       {refineOpen && (
@@ -222,6 +369,7 @@ export default function Home() {
           open={refineOpen}
           busy={refineBusy}
           initial={refineCtx}
+          serve={serve}
           onApply={applyRefine}
           onClose={() => setRefineOpen(false)}
         />
@@ -230,24 +378,29 @@ export default function Home() {
       {palatesOpen && (
         <PalatesScreen
           palates={palates}
-          journal={journal}
+          journal={log}
           defaultTable={defaultTable}
           onChange={setPalates}
           onSaveDefault={(ids) => setDefaultTable(ids)}
           onPulled={(s) => {
-            if (s.palates.length) setPalates(s.palates);
-            setJournal(s.journal);
-            setDefaultTable(s.defaultTable);
+            const ensured = ensureHousehold(s.palates);
+            setDefaultTable(ensured.defaultTable);
+            setPalates(seatDefaultPool(ensured.palates, ensured.defaultTable));
+            setLog(migrateLog(s.journal));
           }}
           onClose={() => setPalatesOpen(false)}
         />
       )}
 
-      {journalOpen && (
-        <Journal
-          entries={journal}
-          onClose={() => setJournalOpen(false)}
-          onRemove={(id) => setJournal((j) => j.filter((e) => e.wine.id !== id))}
+      {logOpen && (
+        <WineLog
+          entries={log}
+          onClose={() => setLogOpen(false)}
+          onHeart={(id) => {
+            const row = log.find((e) => e.wine.id === id);
+            if (row) setLog((prev) => toggleHeart(prev, row.wine));
+          }}
+          onRemove={(id) => setLog((j) => j.filter((e) => e.wine.id !== id))}
         />
       )}
     </>
