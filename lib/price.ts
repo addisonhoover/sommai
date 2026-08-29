@@ -3,23 +3,54 @@ import type { PriceBand, ServeStyle, Wine } from "./types";
 export const PRICE_FLOOR = 0;
 export const PRICE_CEILING = 300;
 export const PRICE_STEP = 10;
-/** One-night window the slider drags as a unit. Stays this wide at both ends. */
+/** One-night window the slider drags as a unit on the bottle track. */
 export const BAND_WIDTH = 50;
 export const DEFAULT_BAND: PriceBand = { min: PRICE_FLOOR, max: PRICE_FLOOR + BAND_WIDTH };
 
-export function clampBand(min: number, max: number): PriceBand {
+export type PriceTrack = {
+  floor: number;
+  ceiling: number;
+  window: number;
+  step: number;
+};
+
+/** Bottle list is $0–$300 / $50. Glass pours are a smaller world: $0–$60 / $10. */
+export function trackFor(serve: ServeStyle = "bottle"): PriceTrack {
+  if (serve === "glass") return { floor: 0, ceiling: 60, window: 10, step: 2 };
+  return { floor: PRICE_FLOOR, ceiling: PRICE_CEILING, window: BAND_WIDTH, step: PRICE_STEP };
+}
+
+export function defaultBand(serve: ServeStyle = "bottle"): PriceBand {
+  const t = trackFor(serve);
+  return { min: t.floor, max: t.floor + t.window };
+}
+
+export function clampBand(min: number, max: number, serve: ServeStyle = "bottle"): PriceBand {
+  const t = trackFor(serve);
   const lo = Math.min(min, max);
   const hi = Math.max(min, max);
   const clamp = (n: number) =>
-    Math.min(PRICE_CEILING, Math.max(PRICE_FLOOR, Math.round(n / PRICE_STEP) * PRICE_STEP));
+    Math.min(t.ceiling, Math.max(t.floor, Math.round(n / t.step) * t.step));
   return { min: clamp(lo), max: clamp(hi) };
 }
 
-/** Slide a ~$50 window along the track. Does not shrink at the ends. */
-export function slideWindow(min: number): PriceBand {
-  const stepped = Math.round(min / PRICE_STEP) * PRICE_STEP;
-  const lo = Math.min(PRICE_CEILING - BAND_WIDTH, Math.max(PRICE_FLOOR, stepped));
-  return { min: lo, max: lo + BAND_WIDTH };
+/** Slide the serve-scaled window along the track. Does not shrink at the ends. */
+export function slideWindow(min: number, serve: ServeStyle = "bottle"): PriceBand {
+  const t = trackFor(serve);
+  const stepped = Math.round(min / t.step) * t.step;
+  const lo = Math.min(t.ceiling - t.window, Math.max(t.floor, stepped));
+  return { min: lo, max: lo + t.window };
+}
+
+/** Keep the same place on the night when bottle ↔ glass flips the scale. */
+export function retargetWindow(band: PriceBand, from: ServeStyle, to: ServeStyle): PriceBand {
+  if (from === to) return slideWindow(band.min, to);
+  const a = trackFor(from);
+  const b = trackFor(to);
+  const aSpan = a.ceiling - a.window;
+  const bSpan = b.ceiling - b.window;
+  const t = aSpan <= 0 ? 0 : Math.min(1, Math.max(0, band.min / aSpan));
+  return slideWindow(t * bSpan, to);
 }
 
 export function formatDollars(n: number): string {

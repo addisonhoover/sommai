@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { formatBand, parseMenuPrice, preferBand, rankPicks, slideWindow } from "./price";
+import { formatBand, parseMenuPrice, preferBand, rankPicks, retargetWindow, slideWindow, trackFor } from "./price";
 import type { Wine } from "./types";
 
 function wine(partial: Partial<Wine> & Pick<Wine, "name" | "priceText">): Wine {
@@ -34,6 +34,22 @@ assert.deepEqual(slideWindow(250), { min: 250, max: 300 });
 assert.deepEqual(slideWindow(-20), { min: 0, max: 50 }, "left edge stays $0–$50");
 assert.deepEqual(slideWindow(280), { min: 250, max: 300 }, "right edge stays $250–$300 — no shrink");
 assert.deepEqual(slideWindow(47), { min: 50, max: 100 });
+
+assert.deepEqual(trackFor("glass"), { floor: 0, ceiling: 60, window: 10, step: 2 });
+assert.deepEqual(slideWindow(0, "glass"), { min: 0, max: 10 });
+assert.deepEqual(slideWindow(14, "glass"), { min: 14, max: 24 });
+assert.deepEqual(slideWindow(55, "glass"), { min: 50, max: 60 }, "glass right edge stays $50–$60");
+assert.deepEqual(slideWindow(70, "glass"), { min: 50, max: 60 }, "a $70 bottle window cannot sit on the glass track");
+
+const glassFromBottle = retargetWindow({ min: 70, max: 120 }, "bottle", "glass");
+assert.equal(glassFromBottle.max - glassFromBottle.min, 10);
+assert.ok(glassFromBottle.max <= 60);
+assert.ok(glassFromBottle.min >= 0);
+assert.notDeepEqual(glassFromBottle, { min: 70, max: 120 });
+
+const back = retargetWindow(glassFromBottle, "glass", "bottle");
+assert.equal(back.max - back.min, 50);
+assert.ok(back.max <= 300);
 
 const cheap = wine({ name: "Weeknight", priceText: "$42", fits: [{ palateId: "erin", palateName: "Erin", score: 78, reason: "" }] });
 const splashy = wine({ name: "Celebration", priceText: "$210", fits: [{ palateId: "erin", palateName: "Erin", score: 94, reason: "" }] });

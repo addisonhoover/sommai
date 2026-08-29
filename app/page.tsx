@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AnalyzeResult, Palate, PriceBand, RefineContext, ServeStyle, Wine, WineLogEntry } from "@/lib/types";
 import { ensureHousehold, householdPalates, learningSignal, seatDefaultPool } from "@/lib/palates";
 import { prepareScanImage } from "@/lib/image";
-import { DEFAULT_BAND, rankPicks } from "@/lib/price";
+import { DEFAULT_BAND, rankPicks, retargetWindow, slideWindow } from "@/lib/price";
 import {
   compactKnown,
   flagsFor,
@@ -107,9 +107,6 @@ export default function Home() {
     const act = palates.filter((p) => p.active);
     return act.length ? act : palates.slice(0, 1);
   }, [palates]);
-
-  const liveBand = (): PriceBand | null =>
-    bandRef.current.touched ? bandRef.current.band : null;
 
   const cacheResult = (next: AnalyzeResult, forServe: ServeStyle) => {
     if (forServe === "glass") setGlassResult(next);
@@ -231,21 +228,33 @@ export default function Home() {
   const onServe = useCallback(
     (next: ServeStyle) => {
       if (next === serveRef.current) return;
+      const prev = serveRef.current;
+      const remapped = bandRef.current.touched
+        ? retargetWindow(bandRef.current.band, prev, next)
+        : slideWindow(0, next);
+      const live = bandRef.current.touched ? remapped : null;
       setServe(next);
-      setRefineCtx((ctx) => ({ ...ctx, serve: next }));
+      setPriceBand(remapped);
+      setRefineCtx((ctx) => ({ ...ctx, serve: next, priceBand: live }));
       if (next === "glass" && glassResult) {
-        setResult(glassResult);
+        const wines = rankPicks(glassResult.wines, live, "glass");
+        const ranked = { ...glassResult, wines };
+        setGlassResult(ranked);
+        setResult(ranked);
         return;
       }
       if (next === "bottle" && bottleResult) {
-        setResult(bottleResult);
+        const wines = rankPicks(bottleResult.wines, live, "bottle");
+        const ranked = { ...bottleResult, wines };
+        setBottleResult(ranked);
+        setResult(ranked);
         return;
       }
       const photo = capturedRef.current;
       if (next === "glass" && photo) {
         setThinkPhase("glass");
         setView("analyzing");
-        analyze(photo, { priceBand: liveBand(), serve: "glass" });
+        analyze(photo, { priceBand: live, serve: "glass" });
       }
     },
     [analyze, bottleResult, glassResult],
