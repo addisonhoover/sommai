@@ -162,7 +162,7 @@ Read only what is printed on the attached photo.
 - listings: every wine you can actually read (name + producer as printed). Empty if you cannot honestly name real bottles.
 - Never invent a bottle. Never add a favorite, a cellar memory, or a wine that is not on this page.
 - Copy prices exactly. Leave fields empty when they are not printed.
-- byTheGlass is true only when that line is listed as a pour / by the glass.`;
+- byTheGlass is true only when that line is listed as a pour / by the glass. If the page is only a by-the-glass list (pours, glass prices, no bottle list), every listing is byTheGlass.`;
 
 export const SOMM_SYSTEM = `You are SommAI — a Master Sommelier rendered as a calm, precise digital concierge.
 You analyze photos of wine menus and bottle labels and give confident, useful guidance to curious diners who enjoy wine but are not experts.

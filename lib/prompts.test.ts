@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { EXTRACT_SCHEMA, IMPORT_SCHEMA, REFINE_SCHEMA, WINE_SCHEMA } from "./prompts";
+import { EXTRACT_SCHEMA, EXTRACT_SYSTEM, IMPORT_SCHEMA, REFINE_SCHEMA, WINE_SCHEMA } from "./prompts";
 
 // Anthropic output_config.format.schema rejects these on arrays/strings/numbers.
 // minItems is only allowed as 0 or 1; we do not send it at all.
@@ -53,3 +53,9 @@ for (const file of ["analyze/route.ts", "refine/route.ts", "import/route.ts"]) {
 }
 
 console.log("anthropic sampling param checks passed");
+
+assert.match(
+  EXTRACT_SYSTEM,
+  /only a by-the-glass list/,
+  "extract must mark a pours-only page so think can use the glass scale",
+);
